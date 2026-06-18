@@ -12,7 +12,7 @@
 
 - How an RL agent learns purely from reward signals — no hand-written "go toward the waypoint" code
 - What **reward shaping** means in practice: every behavior you see is a direct consequence of the reward function in `swerve_env.py`
-- How **swerve-drive kinematics** work at the individual module level, visualized in real time with AdvantageScope-style arrows
+- How **swerve-drive kinematics** work at the individual module level, visualized in real time with module state arrows
 - The difference between an **early-training policy** (random, chaotic, exploiting reward loopholes) and a **late-training policy** (smooth, goal-directed, path-following)
 
 ---
