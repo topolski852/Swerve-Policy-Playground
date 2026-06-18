@@ -187,8 +187,11 @@ def main():
 
     if args.resume:
         print(f"Resuming from: {args.resume}")
-        model = SAC.load(args.resume, env=env, **{k: v for k, v in SAC_KWARGS.items()
-                                                   if k != "verbose"})
+        # Exclude policy_kwargs so the checkpoint's stored network arch is used as-is,
+        # avoiding a mismatch if SB3 serialized extra defaults (e.g. use_sde=False).
+        resume_kwargs = {k: v for k, v in SAC_KWARGS.items()
+                         if k not in ("verbose", "policy_kwargs")}
+        model = SAC.load(args.resume, env=env, **resume_kwargs)
         model.verbose = 1
     else:
         model = SAC(env=env, **SAC_KWARGS)
