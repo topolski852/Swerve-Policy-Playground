@@ -1,0 +1,217 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# swerve_env.py
+# Gymnasium environment for swerve path-following (Phase 1: translation only).
+#
+# Action space  : Box(3,) — [vx, vy, omega] normalized to [-1, 1]
+#                 omega output is zeroed in Phase 1 (heading locked).
+# Observation   : See _get_obs() for the full vector layout.
+# Reward        : See _compute_reward() — all weights live in constants.py.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import math
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+
+from kinematics import SwerveState
+from field_path import (
+    WAYPOINTS, NUM_WAYPOINTS, TOTAL_LENGTH,
+    nearest_segment, progress_fraction, waypoint_relative, WaypointTracker,
+)
+from constants import (
+    MAX_SPEED_MPS, MAX_ANGULAR_RPS,
+    MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
+    FIELD_WIDTH, FIELD_HEIGHT,
+    # Reward weights
+    RW_PROGRESS, RW_CROSS_TRACK, RW_SMOOTH_VEL,
+    RW_SPEED_MAGNITUDE, RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY,
+)
+
+# Observation vector indices (document here so swerve_env and render agree)
+# [ vx_n, vy_n,               # 0-1  current robot velocity (normalized)
+#   dx0, dy0,                  # 2-3  next waypoint relative pos (meters, robot frame)
+#   dx1, dy1,                  # 4-5  waypoint+1 relative pos
+#   progress,                  # 6    arc-length progress [0, 1]
+#   cross_track,               # 7    signed cross-track error (meters, clamped)
+#   heading ]                  # 8    robot heading (radians, kept for Phase 2 compat)
+OBS_DIM = 9
+OBS_LABELS = ["vx_n","vy_n","dx0","dy0","dx1","dy1","progress","cross_track","heading"]
+
+
+class SwerveEnv(gym.Env):
+
+    metadata = {"render_modes": ["human"], "render_fps": 60}
+
+    def __init__(self, render_mode=None):
+        super().__init__()
+        self.render_mode = render_mode
+
+        # Action: [vx, vy, omega] all in [-1, 1]; scaled by max limits in step()
+        self.action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(3,), dtype=np.float32
+        )
+
+        # Observation bounds
+        obs_low  = np.array([-1, -1,
+                              -FIELD_WIDTH, -FIELD_HEIGHT,
+                              -FIELD_WIDTH, -FIELD_HEIGHT,
+                               0.0, -OFF_PATH_LIMIT,
+                              -math.pi], dtype=np.float32)
+        obs_high = np.array([ 1,  1,
+                               FIELD_WIDTH,  FIELD_HEIGHT,
+                               FIELD_WIDTH,  FIELD_HEIGHT,
+                               1.0,  OFF_PATH_LIMIT,
+                               math.pi], dtype=np.float32)
+        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
+
+        self._robot   = SwerveState()
+        self._tracker = WaypointTracker()
+
+        self._prev_action    = np.zeros(3, dtype=np.float32)
+        self._prev_arc_pos   = 0.0
+        self._step_count     = 0
+
+        self._renderer = None   # created lazily on first render() call
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Gymnasium API
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+        sx, sy = WAYPOINTS[0]
+        self._robot.reset(x=sx, y=sy, heading=0.0)
+        self._tracker.reset()
+        self._prev_action  = np.zeros(3, dtype=np.float32)
+        _, _, _, _, _, arc, _ = nearest_segment(sx, sy)
+        self._prev_arc_pos = arc
+        self._step_count   = 0
+        return self._get_obs(), {}
+
+    def step(self, action: np.ndarray):
+        action = np.clip(action, -1.0, 1.0).astype(np.float32)
+
+        # Scale normalized action to physical units; zero omega in Phase 1
+        cmd_vx    = float(action[0]) * MAX_SPEED_MPS
+        cmd_vy    = float(action[1]) * MAX_SPEED_MPS
+        cmd_omega = 0.0     # Phase 1: translation-only
+
+        self._robot.step(cmd_vx, cmd_vy, cmd_omega)
+        self._step_count += 1
+
+        rx, ry = self._robot.x, self._robot.y
+        advanced = self._tracker.update(rx, ry)
+
+        _, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
+        cross_track = dist * cross_sign
+
+        reward, info = self._compute_reward(
+            arc_pos, cross_track, action, advanced
+        )
+
+        terminated = self._tracker.done
+        truncated  = (dist > OFF_PATH_LIMIT or
+                      self._step_count >= MAX_EPISODE_STEPS)
+
+        if dist > OFF_PATH_LIMIT:
+            reward += RW_OFF_PATH_PENALTY
+            info["off_path"] = True
+
+        self._prev_action  = action.copy()
+        self._prev_arc_pos = arc_pos
+
+        obs = self._get_obs()
+
+        if self.render_mode == "human":
+            self.render()
+
+        return obs, reward, terminated, truncated, info
+
+    def render(self):
+        if self._renderer is None:
+            from renderer import Renderer
+            self._renderer = Renderer()
+        self._renderer.draw(self._robot, self._tracker, self._get_module_states())
+
+    def close(self):
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Reward function  <-- EDIT WEIGHTS IN constants.py
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _compute_reward(self, arc_pos, cross_track, action, waypoints_advanced):
+        """
+        Dense reward signal for path following.
+
+        Components:
+          progress     : meters of arc-length covered since last step (positive)
+          cross_track  : penalty proportional to distance from centerline
+          smooth_vel   : penalty on change in action (jerk)
+          speed_mag    : small penalty on action magnitude (avoid max-speed defaults)
+          waypoint     : bonus each time a waypoint is passed
+          goal         : large bonus on path completion
+        """
+        # Progress: arc-length delta since last step
+        arc_delta = arc_pos - self._prev_arc_pos
+        # Clamp negative deltas (rounding / segment-end artifacts) to zero
+        arc_delta = max(arc_delta, 0.0)
+
+        r_progress    = RW_PROGRESS * arc_delta
+        r_cross       = RW_CROSS_TRACK * abs(cross_track)
+        r_smooth      = RW_SMOOTH_VEL * float(np.linalg.norm(action - self._prev_action))
+        r_speed_mag   = RW_SPEED_MAGNITUDE * float(np.linalg.norm(action))
+        r_waypoint    = RW_WAYPOINT_BONUS * waypoints_advanced
+        r_goal        = RW_GOAL_BONUS if self._tracker.done else 0.0
+
+        reward = r_progress + r_cross + r_smooth + r_speed_mag + r_waypoint + r_goal
+
+        info = {
+            "r_progress":  r_progress,
+            "r_cross":     r_cross,
+            "r_smooth":    r_smooth,
+            "r_speed_mag": r_speed_mag,
+            "r_waypoint":  r_waypoint,
+            "r_goal":      r_goal,
+            "arc_pos":     arc_pos,
+            "cross_track": cross_track,
+        }
+        return reward, info
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Observation builder
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _get_obs(self):
+        rx, ry, heading = self._robot.x, self._robot.y, self._robot.heading
+
+        # Current velocity normalized to [-1, 1]
+        vx_n = self._robot.vx / MAX_SPEED_MPS
+        vy_n = self._robot.vy / MAX_SPEED_MPS
+
+        # Next two waypoints in robot local frame
+        t0 = self._tracker.current_idx
+        t1 = min(t0 + 1, NUM_WAYPOINTS - 1)
+        dx0, dy0 = waypoint_relative(rx, ry, heading, t0)
+        dx1, dy1 = waypoint_relative(rx, ry, heading, t1)
+
+        # Arc-length progress and cross-track error
+        _, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
+        prog = progress_fraction(arc_pos)
+        cross = dist * cross_sign
+        cross = float(np.clip(cross, -OFF_PATH_LIMIT, OFF_PATH_LIMIT))
+
+        return np.array([
+            vx_n, vy_n,
+            dx0, dy0,
+            dx1, dy1,
+            prog,
+            cross,
+            heading,
+        ], dtype=np.float32)
+
+    def _get_module_states(self):
+        """Returns current module (angle, speed) list for the renderer."""
+        return self._robot.module_states
