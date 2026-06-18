@@ -59,9 +59,15 @@ NUM_WAYPOINTS = len(WAYPOINTS)
 
 # ── Path query utilities ───────────────────────────────────────────────────────
 
-def nearest_segment(x: float, y: float):
+def nearest_segment(x: float, y: float, hint_seg: int = 0, window: int = 4):
     """
     Find the path segment (i, i+1) closest to (x, y).
+
+    hint_seg : start of search window (typically tracker.current_idx - 1).
+               Limits the search so the robot can't accidentally latch onto
+               a distant segment with a high arc position — the main cause
+               of the closed-loop backwards-running exploit.
+    window   : number of segments to search ahead of hint_seg.
 
     Returns:
         seg_idx    : index of the segment start waypoint
@@ -79,7 +85,9 @@ def nearest_segment(x: float, y: float):
     best_arc   = 0.0
     best_cross = 0.0
 
-    for i in range(len(WAYPOINTS) - 1):
+    start = max(0, hint_seg - 1)
+    end   = min(len(WAYPOINTS) - 1, hint_seg + window)
+    for i in range(start, end):
         ax, ay = WAYPOINTS[i]
         bx, by = WAYPOINTS[i+1]
 

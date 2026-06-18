@@ -98,6 +98,12 @@ class RenderEvalCallback(BaseCallback):
         ep_reward = 0.0
         step      = 0
 
+        # Draw the initial state a few times so the window is fully visible
+        # before the episode begins — without this the first few frames are missed.
+        for _ in range(5):
+            pygame.event.pump()
+            renderer.draw(env._robot, env._tracker, env._get_module_states())
+
         while not done:
             # Pump events so Windows doesn't mark the window as frozen
             for event in pygame.event.get():
@@ -165,6 +171,12 @@ class RecordEvalCallback(BaseCallback):
         done     = False
         ep_reward = 0.0
         step      = 0
+
+        # Warm-up: draw the initial state before the episode starts so the
+        # window is fully visible and these frames are included in the recording.
+        for _ in range(5):
+            pygame.event.pump()
+            renderer.draw(env._robot, env._tracker, env._get_module_states())
 
         while not done:
             for event in pygame.event.get():

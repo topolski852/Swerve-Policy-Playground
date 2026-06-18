@@ -103,7 +103,12 @@ class SwerveEnv(gym.Env):
         rx, ry = self._robot.x, self._robot.y
         advanced = self._tracker.update(rx, ry)
 
-        seg_idx, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
+        # Restrict segment search to near the current tracker position.
+        # Without this, the closed-loop start/end overlap lets the robot latch
+        # onto segment 13→14 (arc_pos ~31 m) from the spawn point, giving a
+        # massive false progress reward that teaches it to run the path backwards.
+        hint = max(0, self._tracker.current_idx - 1)
+        seg_idx, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry, hint_seg=hint)
         cross_track = dist * cross_sign
 
         reward, info = self._compute_reward(
