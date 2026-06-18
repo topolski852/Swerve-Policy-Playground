@@ -12,7 +12,7 @@
 
 - How an RL agent learns purely from reward signals — no hand-written "go toward the waypoint" code
 - What **reward shaping** means in practice: every behavior you see is a direct consequence of the reward function in `swerve_env.py`
-- How **swerve-drive kinematics** work at the individual module level, visualized in real time with AdvantageScope-style arrows
+- How **swerve-drive kinematics** work at the individual module level, visualized in real time with module state arrows
 - The difference between an **early-training policy** (random, chaotic, exploiting reward loopholes) and a **late-training policy** (smooth, goal-directed, path-following)
 
 ---
@@ -87,7 +87,7 @@ The Pygame renderer shows the full field with the robot driving in real time:
 - **Path** — blue line with waypoint markers; completed segments dim as the robot passes them
 - **Robot chassis** — procedurally drawn rectangle with a red front-edge heading indicator
 - **Module housings** — four corner boxes that rotate with the chassis
-- **AdvantageScope-style arrows** — one per module; arrow direction = wheel heading, arrow length = wheel speed
+- **Module State arrows** — one per module; arrow direction = wheel heading, arrow length = wheel speed
 - **Speed rings** — color-coded rings on each module housing (dark = slow, green = fast)
 - **HUD** — live step count, cumulative reward, path progress %, and cross-track error
 
