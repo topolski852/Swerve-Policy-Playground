@@ -240,7 +240,7 @@ def main():
                         help="Open a Pygame window for one eval episode every --eval-freq steps")
     parser.add_argument("--eval-freq", type=int, default=EVAL_FREQ_DEFAULT,
                         help="How often (in training steps) to run a rendered eval episode")
-    parser.add_argument("--record", action="store_true",
+    parser.add_argument("--render-capture", action="store_true",
                         help=f"Record MP4s at steps {RECORD_STEPS} to {RECORDINGS_DIR}/")
     args = parser.parse_args()
 
@@ -267,9 +267,9 @@ def main():
         callbacks.append(RenderEvalCallback(eval_freq=args.eval_freq))
         print(f"Render-eval ON: window opens/closes every {args.eval_freq:,} steps.")
 
-    if args.record:
+    if args.render_capture:
         callbacks.append(RecordEvalCallback())
-        print(f"Recording ON: MP4s will be saved to {RECORDINGS_DIR}/ at steps {RECORD_STEPS}")
+        print(f"Render-capture ON: MP4s will be saved to {RECORDINGS_DIR}/ at steps {RECORD_STEPS}")
 
     if args.resume:
         print(f"Resuming from: {args.resume}")
