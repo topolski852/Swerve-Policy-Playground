@@ -155,7 +155,7 @@ class WaypointTracker:
 
     @property
     def done(self) -> bool:
-        return self.current_idx >= NUM_WAYPOINTS - 1
+        return self.current_idx >= NUM_WAYPOINTS
 
     def target_waypoint(self):
         """(x, y) of the current target waypoint."""
