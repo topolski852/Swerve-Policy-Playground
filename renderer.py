@@ -4,6 +4,7 @@
 # playback script.
 # ──────────────────────────────────────────────────────────────────────────────
 
+import os
 import math
 import pygame
 from field_path import WAYPOINTS
@@ -29,7 +30,7 @@ def _field_to_screen(fx: float, fy: float, scale: float, pad: int, field_h: floa
 
 class Renderer:
 
-    def __init__(self):
+    def __init__(self, record_path=None):
         if not pygame.get_init():
             pygame.init()
 
@@ -45,6 +46,15 @@ class Renderer:
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock  = pygame.time.Clock()
         self._font  = pygame.font.SysFont("consolas", 13)
+
+        self._video_writer = None
+        if record_path is not None:
+            import imageio
+            rec_dir = os.path.dirname(record_path)
+            if rec_dir:
+                os.makedirs(rec_dir, exist_ok=True)
+            # 50 fps matches the 50 Hz simulation (DT=0.02 s per step)
+            self._video_writer = imageio.get_writer(record_path, fps=50)
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -73,7 +83,15 @@ class Renderer:
         pygame.display.flip()
         self.clock.tick(TARGET_FPS)
 
+        if self._video_writer is not None:
+            # surfarray returns (w, h, 3); video writers expect (h, w, 3)
+            frame = pygame.surfarray.array3d(self.screen).transpose(1, 0, 2)
+            self._video_writer.append_data(frame)
+
     def close(self):
+        if self._video_writer is not None:
+            self._video_writer.close()
+            self._video_writer = None
         pygame.quit()
 
     # ── Drawing helpers ────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ __pycache__/
 # Training outputs — too large for git, use releases or external storage
 checkpoints/
 logs/
+recordings/
 
 # Virtual environments
 venv/
