@@ -23,7 +23,7 @@ from constants import (
     MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
     FIELD_WIDTH, FIELD_HEIGHT,
     # Reward weights
-    RW_PROGRESS, RW_CROSS_TRACK, RW_SMOOTH_VEL,
+    RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY,
 )
 
@@ -102,11 +102,11 @@ class SwerveEnv(gym.Env):
         rx, ry = self._robot.x, self._robot.y
         advanced = self._tracker.update(rx, ry)
 
-        _, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
+        seg_idx, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
         cross_track = dist * cross_sign
 
         reward, info = self._compute_reward(
-            arc_pos, cross_track, action, advanced
+            seg_idx, arc_pos, cross_track, action, advanced
         )
 
         terminated = self._tracker.done
@@ -142,41 +142,70 @@ class SwerveEnv(gym.Env):
     # Reward function  <-- EDIT WEIGHTS IN constants.py
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _compute_reward(self, arc_pos, cross_track, action, waypoints_advanced):
+    def _compute_reward(self, seg_idx, arc_pos, cross_track, action, waypoints_advanced):
         """
         Dense reward signal for path following.
 
         Components:
-          progress     : meters of arc-length covered since last step (positive)
-          cross_track  : penalty proportional to distance from centerline
-          smooth_vel   : penalty on change in action (jerk)
-          speed_mag    : small penalty on action magnitude (avoid max-speed defaults)
+          progress     : arc-length delta this step — NEGATIVE if going backward,
+                         so the agent is penalised for oscillating/reversing
+          vel_align    : velocity dot-product with path direction, normalised to [-1,1]
+                         this is the primary anti-oscillation term; gives a continuous
+                         gradient even when arc_delta is near zero at segment boundaries
+          cross_track  : penalty proportional to distance from path centreline
+          smooth_vel   : penalty on change in action between steps (jerk)
+          speed_mag    : tiny penalty on action magnitude
           waypoint     : bonus each time a waypoint is passed
           goal         : large bonus on path completion
+
+        All weights are in constants.py under "Reward weights".
         """
-        # Progress: arc-length delta since last step
+        # --- Progress (arc-length delta, sign preserved) ---
         arc_delta = arc_pos - self._prev_arc_pos
-        # Clamp negative deltas (rounding / segment-end artifacts) to zero
-        arc_delta = max(arc_delta, 0.0)
+        # Suppress sub-millimetre noise but keep genuine backward movement negative
+        if abs(arc_delta) < 0.001:
+            arc_delta = 0.0
+        r_progress = RW_PROGRESS * arc_delta
 
-        r_progress    = RW_PROGRESS * arc_delta
-        r_cross       = RW_CROSS_TRACK * abs(cross_track)
-        r_smooth      = RW_SMOOTH_VEL * float(np.linalg.norm(action - self._prev_action))
-        r_speed_mag   = RW_SPEED_MAGNITUDE * float(np.linalg.norm(action))
-        r_waypoint    = RW_WAYPOINT_BONUS * waypoints_advanced
-        r_goal        = RW_GOAL_BONUS if self._tracker.done else 0.0
+        # --- Velocity alignment with path direction ---
+        # Get the normalised direction of the current path segment
+        next_idx = min(seg_idx + 1, NUM_WAYPOINTS - 1)
+        sdx = WAYPOINTS[next_idx][0] - WAYPOINTS[seg_idx][0]
+        sdy = WAYPOINTS[next_idx][1] - WAYPOINTS[seg_idx][1]
+        seg_len = math.hypot(sdx, sdy)
+        if seg_len > 1e-9:
+            pdx, pdy = sdx / seg_len, sdy / seg_len
+        else:
+            pdx, pdy = 1.0, 0.0
 
-        reward = r_progress + r_cross + r_smooth + r_speed_mag + r_waypoint + r_goal
+        # Robot velocity rotated into world frame
+        cos_h = math.cos(self._robot.heading)
+        sin_h = math.sin(self._robot.heading)
+        vx_w  = self._robot.vx * cos_h - self._robot.vy * sin_h
+        vy_w  = self._robot.vx * sin_h + self._robot.vy * cos_h
+
+        vel_align = (vx_w * pdx + vy_w * pdy) / MAX_SPEED_MPS   # [-1, 1]
+        r_vel_align = RW_VEL_ALIGN * vel_align
+
+        # --- Other terms ---
+        r_cross     = RW_CROSS_TRACK * abs(cross_track)
+        r_smooth    = RW_SMOOTH_VEL  * float(np.linalg.norm(action - self._prev_action))
+        r_speed_mag = RW_SPEED_MAGNITUDE * float(np.linalg.norm(action))
+        r_waypoint  = RW_WAYPOINT_BONUS * waypoints_advanced
+        r_goal      = RW_GOAL_BONUS if self._tracker.done else 0.0
+
+        reward = (r_progress + r_vel_align + r_cross +
+                  r_smooth + r_speed_mag + r_waypoint + r_goal)
 
         info = {
-            "r_progress":  r_progress,
-            "r_cross":     r_cross,
-            "r_smooth":    r_smooth,
-            "r_speed_mag": r_speed_mag,
-            "r_waypoint":  r_waypoint,
-            "r_goal":      r_goal,
-            "arc_pos":     arc_pos,
-            "cross_track": cross_track,
+            "r_progress":   r_progress,
+            "r_vel_align":  r_vel_align,
+            "r_cross":      r_cross,
+            "r_smooth":     r_smooth,
+            "r_waypoint":   r_waypoint,
+            "r_goal":       r_goal,
+            "arc_pos":      arc_pos,
+            "cross_track":  cross_track,
         }
         return reward, info
 

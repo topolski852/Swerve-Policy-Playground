@@ -57,7 +57,11 @@ class Renderer:
         module_states: list of (angle_rad, speed_mps) — FL, FR, BL, BR
         info         : optional dict of scalars to display in the HUD
         """
+        if not self._alive:
+            return   # window was closed — skip silently, training continues
         self._handle_events()
+        if not self._alive:
+            return
         self.screen.fill((30, 30, 30))
 
         self._draw_field_border()
@@ -80,8 +84,17 @@ class Renderer:
     def _handle_events(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                self.close()
-                raise SystemExit
+                pygame.quit()
+                self._alive = False
+                return
+
+    @property
+    def _alive(self):
+        return getattr(self, "_window_alive", True)
+
+    @_alive.setter
+    def _alive(self, v):
+        self._window_alive = v
 
     def _draw_field_border(self):
         rect = pygame.Rect(

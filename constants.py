@@ -47,15 +47,18 @@ FIELD_HEIGHT =  8.21   # meters, y-axis
 # ── Environment / training ─────────────────────────────────────────────────────
 
 MAX_EPISODE_STEPS   = 1500          # timeout in steps (~30 s at 20 ms)
-WAYPOINT_PASS_RADIUS = 0.4          # meters — advance to next waypoint when within this
+WAYPOINT_PASS_RADIUS = 0.65         # meters — advance to next waypoint when within this
 OFF_PATH_LIMIT       = 2.5          # meters from nearest path point → episode failure
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
 # This is the block you'll tune most often. All coefficients are floats.
 
-RW_PROGRESS          =  1.5    # reward per meter of arc-length progress per step
-RW_CROSS_TRACK       = -0.8    # penalty per meter of signed cross-track error (absolute)
-RW_SMOOTH_VEL        = -0.15   # penalty on L2 norm of (action - prev_action)
+RW_PROGRESS          =  1.0    # reward per meter of arc-length progress per step
+                               # (now allows negative — penalizes backward movement)
+RW_VEL_ALIGN         =  0.8    # reward for velocity component along path direction [-1,1]
+                               # this is the anti-oscillation term — raises it if still bouncing
+RW_CROSS_TRACK       = -0.6    # penalty per meter of signed cross-track error (absolute)
+RW_SMOOTH_VEL        = -0.30   # penalty on L2 norm of (action - prev_action); was -0.15
 RW_SPEED_MAGNITUDE   = -0.02   # small penalty on |action| to discourage max-speed defaults
 RW_WAYPOINT_BONUS    =  2.0    # bonus each time a waypoint is reached
 RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
