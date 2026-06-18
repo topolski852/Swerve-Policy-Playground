@@ -3,7 +3,9 @@
 # SAC training script. Run this to train the swerve path-following policy.
 #
 # Usage:
-#   python train.py                          # train from scratch
+#   python train.py                              # train silently
+#   python train.py --render-eval                # pop a window every 20k steps
+#   python train.py --render-eval --eval-freq 10000   # more frequent eval window
 #   python train.py --resume checkpoints/swerve_100000_steps.zip
 #
 # Outputs:
@@ -18,7 +20,7 @@ import numpy as np
 from datetime import datetime
 
 from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
 
 from swerve_env import SwerveEnv
@@ -27,6 +29,7 @@ from swerve_env import SwerveEnv
 
 TOTAL_TIMESTEPS   = 500_000
 CHECKPOINT_FREQ   = 10_000      # save a .zip every N steps
+EVAL_FREQ_DEFAULT = 20_000      # render an eval episode every N steps (--render-eval)
 LOG_DIR           = "logs"
 CHECKPOINT_DIR    = "checkpoints"
 
@@ -86,6 +89,10 @@ def main():
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to a checkpoint .zip to resume from")
     parser.add_argument("--steps", type=int, default=TOTAL_TIMESTEPS)
+    parser.add_argument("--render-eval", action="store_true",
+                        help="Open a Pygame window for one eval episode every --eval-freq steps")
+    parser.add_argument("--eval-freq", type=int, default=EVAL_FREQ_DEFAULT,
+                        help="How often (in training steps) to run a rendered eval episode")
     args = parser.parse_args()
 
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
@@ -105,6 +112,21 @@ def main():
     )
     reward_cb = RewardLogger(reward_csv)
 
+    callbacks = [checkpoint_cb, reward_cb]
+
+    if args.render_eval:
+        eval_env = SwerveEnv(render_mode="human")
+        eval_cb  = EvalCallback(
+            eval_env,
+            eval_freq        = args.eval_freq,
+            n_eval_episodes  = 1,
+            deterministic    = True,
+            render           = False,   # we handle rendering via render_mode
+            verbose          = 1,
+        )
+        callbacks.append(eval_cb)
+        print(f"Render-eval ON: Pygame window will appear every {args.eval_freq:,} steps.")
+
     if args.resume:
         print(f"Resuming from: {args.resume}")
         model = SAC.load(args.resume, env=env, **{k: v for k, v in SAC_KWARGS.items()
@@ -119,10 +141,10 @@ def main():
 
     try:
         model.learn(
-            total_timesteps = args.steps,
-            callback        = [checkpoint_cb, reward_cb],
+            total_timesteps     = args.steps,
+            callback            = callbacks,
             reset_num_timesteps = (args.resume is None),
-            progress_bar    = True,
+            progress_bar        = True,
         )
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
@@ -131,6 +153,8 @@ def main():
     model.save(final_path)
     print(f"\nFinal model saved to: {final_path}")
     env.close()
+    if args.render_eval:
+        eval_env.close()
 
 
 if __name__ == "__main__":
