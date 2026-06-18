@@ -226,7 +226,7 @@ class SwerveEnv(gym.Env):
         vy_n = self._robot.vy / MAX_SPEED_MPS
 
         # Next two waypoints in robot local frame
-        t0 = self._tracker.current_idx
+        t0 = min(self._tracker.current_idx, NUM_WAYPOINTS - 1)
         t1 = min(t0 + 1, NUM_WAYPOINTS - 1)
         dx0, dy0 = waypoint_relative(rx, ry, heading, t0)
         dx1, dy1 = waypoint_relative(rx, ry, heading, t1)
