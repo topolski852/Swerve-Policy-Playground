@@ -87,7 +87,7 @@ The Pygame renderer shows the full field with the robot driving in real time:
 - **Path** — blue line with waypoint markers; completed segments dim as the robot passes them
 - **Robot chassis** — procedurally drawn rectangle with a red front-edge heading indicator
 - **Module housings** — four corner boxes that rotate with the chassis
-- **AdvantageScope-style arrows** — one per module; arrow direction = wheel heading, arrow length = wheel speed
+- **Module State arrows** — one per module; arrow direction = wheel heading, arrow length = wheel speed
 - **Speed rings** — color-coded rings on each module housing (dark = slow, green = fast)
 - **HUD** — live step count, cumulative reward, path progress %, and cross-track error
 
