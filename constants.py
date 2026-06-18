@@ -1,0 +1,87 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# constants.py
+# All tunable parameters in one place. Edit here, nowhere else.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import math
+
+# ── Robot geometry ─────────────────────────────────────────────────────────────
+
+# Half-widths of the robot chassis (meters).
+# 1507 frame is roughly 0.62 m × 0.62 m (bumpers excluded).
+ROBOT_HALF_WIDTH_X = 0.31   # front-back half-length
+ROBOT_HALF_WIDTH_Y = 0.31   # left-right half-width
+
+# Module offsets from robot center (meters), WPILib order: FL, FR, BL, BR.
+# Each entry is (x_offset, y_offset) in robot frame (x=forward, y=left).
+MODULE_OFFSETS = [
+    ( ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),   # FL
+    ( ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),   # FR
+    (-ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),   # BL
+    (-ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),   # BR
+]
+
+# ── Drive limits ───────────────────────────────────────────────────────────────
+
+MAX_SPEED_MPS       = 4.5   # maximum translational speed (m/s)
+MAX_ANGULAR_RPS     = 3.5   # maximum angular speed (rad/s)  — unused in Phase 1
+
+# First-order velocity lag coefficient (0 < alpha <= 1).
+# actual = alpha * commanded + (1-alpha) * previous
+# Lower = more lag (sluggish), higher = snappier.
+VELOCITY_ALPHA      = 0.35
+
+# Module angle is held at last value when speed is below this threshold (anti-jitter).
+SPEED_DEADBAND      = 0.05  # m/s
+
+# ── Physics ────────────────────────────────────────────────────────────────────
+
+DT = 0.02   # simulation timestep (seconds) — matches WPILib 20 ms loop
+
+# ── Field dimensions ───────────────────────────────────────────────────────────
+
+# FRC field: 16.54 m × 8.21 m
+FIELD_WIDTH  = 16.54   # meters, x-axis
+FIELD_HEIGHT =  8.21   # meters, y-axis
+
+# ── Environment / training ─────────────────────────────────────────────────────
+
+MAX_EPISODE_STEPS   = 1500          # timeout in steps (~30 s at 20 ms)
+WAYPOINT_PASS_RADIUS = 0.4          # meters — advance to next waypoint when within this
+OFF_PATH_LIMIT       = 2.5          # meters from nearest path point → episode failure
+
+# ── Reward weights ─────────────────────────────────────────────────────────────
+# This is the block you'll tune most often. All coefficients are floats.
+
+RW_PROGRESS          =  1.5    # reward per meter of arc-length progress per step
+RW_CROSS_TRACK       = -0.8    # penalty per meter of signed cross-track error (absolute)
+RW_SMOOTH_VEL        = -0.15   # penalty on L2 norm of (action - prev_action)
+RW_SPEED_MAGNITUDE   = -0.02   # small penalty on |action| to discourage max-speed defaults
+RW_WAYPOINT_BONUS    =  2.0    # bonus each time a waypoint is reached
+RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
+RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
+
+# ── Renderer ───────────────────────────────────────────────────────────────────
+
+RENDER_SCALE         = 60.0    # pixels per meter
+WINDOW_PADDING       = 40      # pixels of border around the field
+
+ROBOT_COLOR          = (220, 220, 220)   # chassis fill
+ROBOT_BORDER_COLOR   = ( 50,  50,  50)  # chassis outline
+MODULE_COLOR         = ( 80,  80,  80)  # module housing fill
+PATH_COLOR           = ( 60, 130, 200)  # path line
+WAYPOINT_COLOR       = (255, 200,  50)  # waypoint markers
+ROBOT_HEADING_COLOR  = (255,  80,  80)  # heading indicator on chassis
+
+# Module state arrows (AdvantageScope style)
+ARROW_MAX_PIXELS     = 38      # arrow length at MAX_SPEED_MPS
+ARROW_COLOR          = ( 80, 220, 120)  # arrow shaft/head
+ARROW_WIDTH          = 3       # shaft thickness in pixels
+ARROW_HEAD_SIZE      = 8       # triangle side length in pixels
+
+# Speed indicator ring on each module housing
+MODULE_RING_SLOW     = ( 60,  60,  60)
+MODULE_RING_FAST     = (120, 220, 120)
+
+WINDOW_TITLE         = "Swerve Policy Playground — Team 1507"
+TARGET_FPS           = 60
