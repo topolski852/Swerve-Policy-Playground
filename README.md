@@ -46,8 +46,8 @@ Checkpoints are saved to `checkpoints/` every 10,000 steps automatically.
 
 ### Watch any checkpoint
 ```bash
-python render.py checkpoints/swerve_50000_steps.zip
-python render.py checkpoints/swerve_final.zip --speed 0.5   # half speed
+python render.py checkpoints/swerve_50000_steps
+python render.py checkpoints/swerve_final --speed 0.5   # half speed
 ```
 
 ### Plot the reward curve

@@ -4,8 +4,8 @@
 # Use this to record clean footage from any point in training.
 #
 # Usage:
-#   python render.py checkpoints/swerve_50000_steps.zip
-#   python render.py checkpoints/swerve_final.zip --speed 0.5
+#   python render.py checkpoints/swerve_50000_steps
+#   python render.py checkpoints/swerve_final --speed 0.5
 # ──────────────────────────────────────────────────────────────────────────────
 
 import argparse
