@@ -54,12 +54,13 @@ OFF_PATH_LIMIT       = 2.5          # meters from nearest path point → episode
 # This is the block you'll tune most often. All coefficients are floats.
 
 RW_PROGRESS          =  1.0    # reward per meter of arc-length progress per step
-                               # (now allows negative — penalizes backward movement)
-RW_VEL_ALIGN         =  0.8    # reward for velocity component along path direction [-1,1]
-                               # this is the anti-oscillation term — raises it if still bouncing
+                               # (allows negative — penalizes backward movement)
+RW_VEL_ALIGN         =  0.8    # reward for velocity toward the current target waypoint [-1,1]
+                               # uses waypoint direction, not segment — prevents wp1-loop exploit
 RW_CROSS_TRACK       = -0.6    # penalty per meter of signed cross-track error (absolute)
-RW_SMOOTH_VEL        = -0.30   # penalty on L2 norm of (action - prev_action); was -0.15
+RW_SMOOTH_VEL        = -0.30   # penalty on L2 norm of (action - prev_action)
 RW_SPEED_MAGNITUDE   = -0.02   # small penalty on |action| to discourage max-speed defaults
+RW_TIME_PENALTY      = -0.02   # per-step cost — creates urgency, prevents infinite looping
 RW_WAYPOINT_BONUS    =  2.0    # bonus each time a waypoint is reached
 RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
 RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination

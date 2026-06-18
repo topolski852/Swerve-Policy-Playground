@@ -24,7 +24,8 @@ from constants import (
     FIELD_WIDTH, FIELD_HEIGHT,
     # Reward weights
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
-    RW_SPEED_MAGNITUDE, RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY,
+    RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
+    RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY,
 )
 
 # Observation vector indices (document here so swerve_env and render agree)
@@ -167,41 +168,45 @@ class SwerveEnv(gym.Env):
             arc_delta = 0.0
         r_progress = RW_PROGRESS * arc_delta
 
-        # --- Velocity alignment with path direction ---
-        # Get the normalised direction of the current path segment
-        next_idx = min(seg_idx + 1, NUM_WAYPOINTS - 1)
-        sdx = WAYPOINTS[next_idx][0] - WAYPOINTS[seg_idx][0]
-        sdy = WAYPOINTS[next_idx][1] - WAYPOINTS[seg_idx][1]
-        seg_len = math.hypot(sdx, sdy)
-        if seg_len > 1e-9:
-            pdx, pdy = sdx / seg_len, sdy / seg_len
+        # --- Velocity alignment toward current target waypoint ---
+        # Uses the tracker's live target, not the nearest segment.
+        # This means once the robot passes wp1 and the target becomes wp2,
+        # going backward toward wp1 gives NEGATIVE vel_align — closing the
+        # wp1-loop exploit where the agent recycled the waypoint bonus.
+        tx, ty = self._tracker.target_waypoint()
+        dx_wp  = tx - self._robot.x
+        dy_wp  = ty - self._robot.y
+        d_wp   = math.hypot(dx_wp, dy_wp)
+        if d_wp > 1e-9:
+            pdx, pdy = dx_wp / d_wp, dy_wp / d_wp
         else:
             pdx, pdy = 1.0, 0.0
 
-        # Robot velocity rotated into world frame
         cos_h = math.cos(self._robot.heading)
         sin_h = math.sin(self._robot.heading)
         vx_w  = self._robot.vx * cos_h - self._robot.vy * sin_h
         vy_w  = self._robot.vx * sin_h + self._robot.vy * cos_h
 
-        vel_align = (vx_w * pdx + vy_w * pdy) / MAX_SPEED_MPS   # [-1, 1]
+        vel_align   = (vx_w * pdx + vy_w * pdy) / MAX_SPEED_MPS   # [-1, 1]
         r_vel_align = RW_VEL_ALIGN * vel_align
 
         # --- Other terms ---
-        r_cross     = RW_CROSS_TRACK * abs(cross_track)
-        r_smooth    = RW_SMOOTH_VEL  * float(np.linalg.norm(action - self._prev_action))
+        r_cross     = RW_CROSS_TRACK   * abs(cross_track)
+        r_smooth    = RW_SMOOTH_VEL    * float(np.linalg.norm(action - self._prev_action))
         r_speed_mag = RW_SPEED_MAGNITUDE * float(np.linalg.norm(action))
+        r_time      = RW_TIME_PENALTY  # flat per-step cost — punishes loitering
         r_waypoint  = RW_WAYPOINT_BONUS * waypoints_advanced
         r_goal      = RW_GOAL_BONUS if self._tracker.done else 0.0
 
         reward = (r_progress + r_vel_align + r_cross +
-                  r_smooth + r_speed_mag + r_waypoint + r_goal)
+                  r_smooth + r_speed_mag + r_time + r_waypoint + r_goal)
 
         info = {
             "r_progress":   r_progress,
             "r_vel_align":  r_vel_align,
             "r_cross":      r_cross,
             "r_smooth":     r_smooth,
+            "r_time":       r_time,
             "r_waypoint":   r_waypoint,
             "r_goal":       r_goal,
             "arc_pos":      arc_pos,
