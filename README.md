@@ -21,7 +21,7 @@
 
 ### Install dependencies
 ```bash
-pip install gymnasium stable-baselines3 pygame matplotlib tqdm rich
+pip install gymnasium stable-baselines3 pygame matplotlib tqdm rich imageio imageio-ffmpeg
 ```
 
 ### Train a policy
@@ -31,6 +31,15 @@ python train.py
 
 # With a Pygame window every 20k steps to watch progress
 python train.py --render-eval --eval-freq 20000
+
+# Auto-record MP4 snapshots at key training milestones
+python train.py --render-capture
+
+# Both live window and recording at the same time
+python train.py --render-eval --render-capture
+
+# Resume from a checkpoint
+python train.py --resume checkpoints/swerve_final
 ```
 
 Checkpoints are saved to `checkpoints/` every 10,000 steps automatically.
@@ -57,7 +66,7 @@ python plot_rewards.py   # auto-selects the latest log in logs/
 | [`field_path.py`](field_path.py) | Hardcoded 15-waypoint FRC-style loop, arc-length parameterization, monotonic waypoint tracker |
 | [`swerve_env.py`](swerve_env.py) | Gymnasium environment — observation space, action space, reward function |
 | [`renderer.py`](renderer.py) | Shared Pygame renderer used by both live training evals and the playback script |
-| [`train.py`](train.py) | SAC training loop with checkpoint saving and reward CSV logging |
+| [`train.py`](train.py) | SAC training loop with checkpoint saving, reward CSV logging, and optional MP4 capture |
 | [`render.py`](render.py) | Pygame playback from any saved checkpoint |
 | [`plot_rewards.py`](plot_rewards.py) | matplotlib reward curve — raw episode rewards + rolling average |
 
@@ -93,6 +102,24 @@ The Pygame renderer shows the full field with the robot driving in real time:
 
 ---
 
+## Render Capture
+
+Pass `--render-capture` to automatically record an MP4 of one deterministic episode at 16 preset training milestones. The schedule is front-loaded because the most dramatic changes happen early:
+
+| Steps | What you see |
+|---|---|
+| 500 · 1k · 2k | Pure random wandering — no learning has happened yet |
+| 5k · 8k · 12k | First gradient updates fire; first signs of intentional movement |
+| 18k · 25k · 35k · 50k | Rapid improvement — waypoints conquered one by one |
+| 75k · 100k · 150k | Waypoint frontier advancing, near-complete laps |
+| 200k · 300k · 500k | Late-stage optimization, smooth consistent laps |
+
+Videos are saved to `recordings/` as `eval_0000500_steps.mp4`, `eval_0001000_steps.mp4`, etc. — zero-padded so they sort correctly in any file browser. Each video plays back at real-time speed (50 fps = 20 ms per simulation step).
+
+If you resume training with `--resume`, milestones that have already been passed are skipped automatically.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -102,5 +129,6 @@ The Pygame renderer shows the full field with the robot driving in real time:
 | Swerve kinematics | Custom Python — WPILib `SwerveDriveKinematics` equivalent |
 | Visualization | [Pygame](https://www.pygame.org/) |
 | Reward plotting | [matplotlib](https://matplotlib.org/) |
+| Video recording | [imageio](https://imageio.readthedocs.io/) + [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) |
 
 Built by [Team 1507 – Warlocks](https://warlocks1507.com).
