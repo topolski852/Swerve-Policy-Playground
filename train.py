@@ -119,14 +119,21 @@ class RenderEvalCallback(BaseCallback):
 # ── Reward logger callback ─────────────────────────────────────────────────────
 
 class RewardLogger(BaseCallback):
-    """Writes (timestep, episode_reward) rows to logs/rewards.csv."""
+    """
+    Writes (timestep, episode_reward) rows to CSV and prints a progress
+    line to the terminal every PRINT_EVERY episodes.
+    """
 
-    def __init__(self, log_path: str):
+    PRINT_EVERY = 10   # print one line per N completed episodes
+
+    def __init__(self, log_path: str, total_steps: int):
         super().__init__()
-        self._path = log_path
-        self._ep_reward = 0.0
-        self._f   = None
-        self._writer = None
+        self._path        = log_path
+        self._total_steps = total_steps
+        self._ep_reward   = 0.0
+        self._ep_count    = 0
+        self._f           = None
+        self._writer      = None
 
     def _on_training_start(self):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
@@ -139,8 +146,16 @@ class RewardLogger(BaseCallback):
         done   = self.locals.get("dones",   [False])[0]
         self._ep_reward += reward
         if done:
+            self._ep_count += 1
             self._writer.writerow([self.num_timesteps, round(self._ep_reward, 4)])
             self._f.flush()
+
+            if self._ep_count % self.PRINT_EVERY == 0:
+                pct = self.num_timesteps / self._total_steps * 100
+                print(f"  step {self.num_timesteps:>8,} / {self._total_steps:,}"
+                      f"  ({pct:5.1f}%)  ep {self._ep_count:>5}  "
+                      f"reward {self._ep_reward:>8.1f}")
+
             self._ep_reward = 0.0
         return True
 
@@ -177,7 +192,7 @@ def main():
         name_prefix = "swerve",
         verbose     = 1,
     )
-    reward_cb = RewardLogger(reward_csv)
+    reward_cb = RewardLogger(reward_csv, total_steps=args.steps)
 
     callbacks = [checkpoint_cb, reward_cb]
 
@@ -202,7 +217,7 @@ def main():
             total_timesteps     = args.steps,
             callback            = callbacks,
             reset_num_timesteps = (args.resume is None),
-            progress_bar        = True,
+            progress_bar        = False,
         )
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
