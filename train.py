@@ -20,8 +20,7 @@ import numpy as np
 from datetime import datetime
 
 from stable_baselines3 import SAC
-from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback, EvalCallback
-from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
 from swerve_env import SwerveEnv
 
@@ -47,6 +46,74 @@ SAC_KWARGS = dict(
     verbose        = 1,
     device         = "cpu",
 )
+
+
+# ── Render-eval callback ───────────────────────────────────────────────────────
+
+class RenderEvalCallback(BaseCallback):
+    """
+    Every eval_freq training steps, opens a Pygame window, runs one
+    deterministic episode, then CLOSES the window immediately after.
+
+    The window only exists for the duration of the episode (~20 s).
+    It never sits frozen between evals, which caused the Not Responding crash.
+    """
+
+    def __init__(self, eval_freq: int):
+        super().__init__()
+        self._eval_freq  = eval_freq
+        self._last_eval  = 0
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps - self._last_eval >= self._eval_freq:
+            self._last_eval = self.num_timesteps
+            self._run_rendered_episode()
+        return True
+
+    def _run_rendered_episode(self):
+        import pygame
+        from renderer import Renderer
+
+        print(f"\n[Render eval @ step {self.num_timesteps:,}]")
+
+        env      = SwerveEnv()
+        renderer = Renderer()
+        obs, _   = env.reset()
+        done     = False
+        ep_reward = 0.0
+        step      = 0
+
+        while not done:
+            # Pump events so Windows doesn't mark the window as frozen
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    done = True
+                    break
+
+            if done:
+                break
+
+            action, _ = self.model.predict(obs, deterministic=True)
+            obs, reward, terminated, truncated, info = env.step(action)
+            ep_reward += reward
+            done = terminated or truncated
+            step += 1
+
+            hud = {
+                "train_step": self.num_timesteps,
+                "eval_step":  step,
+                "reward":     round(ep_reward, 2),
+                "progress%":  round(info.get("arc_pos", 0) /
+                                    __import__("field_path").TOTAL_LENGTH * 100, 1),
+            }
+            renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
+
+        status = "SUCCESS" if terminated else ("QUIT" if step == 0 else "TIMEOUT/OFF-PATH")
+        print(f"  {status}  steps={step}  reward={ep_reward:.2f}")
+
+        # Close immediately — no frozen window left behind
+        renderer.close()
+        env.close()
 
 
 # ── Reward logger callback ─────────────────────────────────────────────────────
@@ -115,17 +182,8 @@ def main():
     callbacks = [checkpoint_cb, reward_cb]
 
     if args.render_eval:
-        eval_env = SwerveEnv(render_mode="human")
-        eval_cb  = EvalCallback(
-            eval_env,
-            eval_freq        = args.eval_freq,
-            n_eval_episodes  = 1,
-            deterministic    = True,
-            render           = False,   # we handle rendering via render_mode
-            verbose          = 1,
-        )
-        callbacks.append(eval_cb)
-        print(f"Render-eval ON: Pygame window will appear every {args.eval_freq:,} steps.")
+        callbacks.append(RenderEvalCallback(eval_freq=args.eval_freq))
+        print(f"Render-eval ON: window opens/closes every {args.eval_freq:,} steps.")
 
     if args.resume:
         print(f"Resuming from: {args.resume}")
@@ -153,8 +211,6 @@ def main():
     model.save(final_path)
     print(f"\nFinal model saved to: {final_path}")
     env.close()
-    if args.render_eval:
-        eval_env.close()
 
 
 if __name__ == "__main__":
