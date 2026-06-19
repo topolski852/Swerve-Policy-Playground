@@ -26,7 +26,7 @@ from swerve_env import SwerveEnv
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
-TOTAL_TIMESTEPS   = 500_000
+TOTAL_TIMESTEPS   = 2_000_000
 CHECKPOINT_FREQ   = 10_000      # save a .zip every N steps
 EVAL_FREQ_DEFAULT = 20_000      # render an eval episode every N steps (--render-eval)
 LOG_DIR           = "logs"
@@ -45,6 +45,7 @@ RECORD_STEPS = [
     18_000, 25_000, 35_000, 50_000,              # rapid early improvement
     75_000, 100_000, 150_000,                    # waypoint frontier advancing
     200_000, 300_000, 500_000,                   # late-stage optimization
+    750_000, 1_000_000, 1_500_000, 2_000_000,   # extended overnight run
 ]
 
 SAC_KWARGS = dict(
