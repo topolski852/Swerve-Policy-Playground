@@ -201,6 +201,8 @@ class RecordEvalCallback(BaseCallback):
                 "reward":     round(ep_reward, 2),
                 "progress%":  round(info.get("arc_pos", 0) /
                                     __import__("field_path").TOTAL_LENGTH * 100, 1),
+                "hopper":     round(info.get("hopper_level", 0) * 60, 1),
+                "scoring":    round(info.get("fuel_scored",  0), 2),
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
