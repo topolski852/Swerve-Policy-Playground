@@ -28,37 +28,51 @@ from lib.field_constants import (
 from fuel_scoring.constants import (
     MAX_EPISODE_STEPS, SCORING_START_HOPPER,
     HOPPER_CAPACITY, FUEL_FILL_RATE_MAX, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
+    CONTRIBUTED_SCORE_NORM, TOTAL_SCORE_NORM,
     RW_FUEL_SCORED, RW_FUEL_COLLECTED,
     RW_FULL_HOPPER_IN_NEUTRAL, RW_EMPTY_HOPPER_IN_ALLIANCE,
     RW_COLLISION_PENALTY,
 )
 
-# Starting position: Blue Alliance Zone, BumpRight corridor center
+# Default starting position: Blue Alliance Zone, BumpRight corridor center
 START_X = 3.50
 START_Y = 2.55
 
-OBS_DIM    = 5
-OBS_LABELS = ["vx_n", "vy_n", "rx_n", "ry_n", "hopper_norm"]
+# Four alternate starting positions (path_following WP1/2/4/5) used when
+# random_start=True. Two inside Blue Alliance Zone, two just past the bump.
+RANDOM_STARTS = [
+    (5.90, 5.60),   # WP1 — neutral side Blue BumpLeft
+    (3.20, 5.60),   # WP2 — alliance side Blue BumpLeft top
+    (3.20, 2.61),   # WP4 — alliance side Blue BumpRight bottom
+    (5.90, 2.61),   # WP5 — neutral side Blue BumpRight
+]
+
+OBS_DIM    = 7
+OBS_LABELS = ["vx_n", "vy_n", "rx_n", "ry_n", "hopper_norm",
+              "contributed_norm", "total_norm"]
 
 
 class SwerveEnv(gym.Env):
 
     metadata = {"render_modes": ["human"], "render_fps": 60}
 
-    def __init__(self, render_mode=None):
+    def __init__(self, render_mode=None, random_start=False):
         super().__init__()
-        self.render_mode = render_mode
+        self.render_mode   = render_mode
+        self._random_start = random_start
 
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(3,), dtype=np.float32
         )
 
-        obs_low  = np.array([-1.0, -1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-        obs_high = np.array([ 1.0,  1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+        obs_low  = np.array([-1.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        obs_high = np.array([ 1.0,  1.0, 1.0, 1.0, 1.0, 1.0, 1.0], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
-        self._robot  = SwerveState()
-        self._hopper = SCORING_START_HOPPER
+        self._robot             = SwerveState()
+        self._hopper            = SCORING_START_HOPPER
+        self._contributed_score = 0.0
+        self._total_score       = 0.0
 
         self._step_count = 0
         self._renderer   = None
@@ -69,9 +83,16 @@ class SwerveEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        self._robot.reset(x=START_X, y=START_Y, heading=0.0)
-        self._hopper     = SCORING_START_HOPPER
-        self._step_count = 0
+        if self._random_start:
+            sx, sy = RANDOM_STARTS[self.np_random.integers(len(RANDOM_STARTS))]
+            self._hopper = float(self.np_random.uniform(0.0, HOPPER_CAPACITY))
+        else:
+            sx, sy = START_X, START_Y
+            self._hopper = SCORING_START_HOPPER
+        self._robot.reset(x=sx, y=sy, heading=0.0)
+        self._contributed_score = 0.0
+        self._total_score       = 0.0
+        self._step_count        = 0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -103,8 +124,10 @@ class SwerveEnv(gym.Env):
         fuel_scored = 0.0
         if rx < BLUE_ALLIANCE_MAX_X and self._hopper > 0:
             shot = min(self._hopper, FUEL_SHOOT_RATE)
-            self._hopper -= shot
-            fuel_scored   = shot
+            self._hopper            -= shot
+            self._contributed_score += shot
+            self._total_score       += shot   # same as contributed until multi-robot
+            fuel_scored              = shot
 
         # ── Reward ────────────────────────────────────────────────────────────
         reward, info = self._compute_reward(fuel_scored, fuel_collected)
@@ -192,13 +215,16 @@ class SwerveEnv(gym.Env):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _get_obs(self):
-        vx_n = float(np.clip(self._robot.vx / MAX_SPEED_MPS, -1.0, 1.0))
-        vy_n = float(np.clip(self._robot.vy / MAX_SPEED_MPS, -1.0, 1.0))
-        rx_n = float(np.clip(self._robot.x  / FIELD_LENGTH,   0.0, 1.0))
-        ry_n = float(np.clip(self._robot.y  / FIELD_WIDTH,    0.0, 1.0))
-        hopper_norm = float(np.clip(self._hopper / HOPPER_CAPACITY, 0.0, 1.0))
+        vx_n = float(np.clip(self._robot.vx / MAX_SPEED_MPS,              -1.0, 1.0))
+        vy_n = float(np.clip(self._robot.vy / MAX_SPEED_MPS,              -1.0, 1.0))
+        rx_n = float(np.clip(self._robot.x  / FIELD_LENGTH,                0.0, 1.0))
+        ry_n = float(np.clip(self._robot.y  / FIELD_WIDTH,                 0.0, 1.0))
+        hopper_norm      = float(np.clip(self._hopper            / HOPPER_CAPACITY,      0.0, 1.0))
+        contributed_norm = float(np.clip(self._contributed_score / CONTRIBUTED_SCORE_NORM, 0.0, 1.0))
+        total_norm       = float(np.clip(self._total_score       / TOTAL_SCORE_NORM,       0.0, 1.0))
 
-        return np.array([vx_n, vy_n, rx_n, ry_n, hopper_norm], dtype=np.float32)
+        return np.array([vx_n, vy_n, rx_n, ry_n, hopper_norm,
+                         contributed_norm, total_norm], dtype=np.float32)
 
     def _get_module_states(self):
         return self._robot.module_states

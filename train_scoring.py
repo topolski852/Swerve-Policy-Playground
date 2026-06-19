@@ -46,7 +46,7 @@ SAC_KWARGS = dict(
     policy         = "MlpPolicy",
     learning_rate  = 3e-4,
     buffer_size    = 200_000,
-    learning_starts= 5_000,
+    learning_starts= 20_000,
     batch_size     = 256,
     tau            = 0.005,
     gamma          = 0.99,
@@ -80,12 +80,13 @@ class RenderEvalCallback(BaseCallback):
 
         print(f"\n[Render eval @ step {self.num_timesteps:,}]")
 
-        env      = SwerveEnv()
-        renderer = Renderer(waypoints=None)
-        obs, _   = env.reset()
-        done     = False
-        ep_reward = 0.0
-        step      = 0
+        env           = SwerveEnv()
+        renderer      = Renderer(waypoints=None)
+        obs, _        = env.reset()
+        done          = False
+        ep_reward     = 0.0
+        total_scored  = 0.0
+        step          = 0
 
         for _ in range(5):
             pygame.event.pump()
@@ -101,16 +102,17 @@ class RenderEvalCallback(BaseCallback):
 
             action, _ = self.model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
-            ep_reward += reward
-            done = terminated or truncated
-            step += 1
+            ep_reward    += reward
+            total_scored += info.get("fuel_scored", 0)
+            done          = terminated or truncated
+            step         += 1
 
             hud = {
-                "train_step":  self.num_timesteps,
-                "eval_step":   step,
-                "reward":      round(ep_reward, 2),
-                "hopper":      round(info.get("hopper_level", 0) * 60, 1),
-                "fuel_scored": round(info.get("fuel_scored", 0), 2),
+                "train_step":   self.num_timesteps,
+                "eval_step":    step,
+                "reward":       round(ep_reward, 2),
+                "hopper":       round(info.get("hopper_level", 0) * 60, 1),
+                "total_scored": round(total_scored, 1),
             }
             renderer.draw(env._robot, None, env._get_module_states(), info=hud)
 
@@ -145,12 +147,13 @@ class RecordEvalCallback(BaseCallback):
         path = os.path.join(self._dir, f"eval_{step_count:07d}_steps.mp4")
         print(f"\n[Recording @ step {self.num_timesteps:,}] -> {path}")
 
-        env      = SwerveEnv()
-        renderer = Renderer(waypoints=None, record_path=path)
-        obs, _   = env.reset()
-        done     = False
-        ep_reward = 0.0
-        step      = 0
+        env          = SwerveEnv()
+        renderer     = Renderer(waypoints=None, record_path=path)
+        obs, _       = env.reset()
+        done         = False
+        ep_reward    = 0.0
+        total_scored = 0.0
+        step         = 0
 
         for _ in range(5):
             pygame.event.pump()
@@ -166,16 +169,17 @@ class RecordEvalCallback(BaseCallback):
 
             action, _ = self.model.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(action)
-            ep_reward += reward
-            done = terminated or truncated
-            step += 1
+            ep_reward    += reward
+            total_scored += info.get("fuel_scored", 0)
+            done          = terminated or truncated
+            step         += 1
 
             hud = {
-                "train_step":  step_count,
-                "eval_step":   step,
-                "reward":      round(ep_reward, 2),
-                "hopper":      round(info.get("hopper_level", 0) * 60, 1),
-                "fuel_scored": round(info.get("fuel_scored", 0), 2),
+                "train_step":   step_count,
+                "eval_step":    step,
+                "reward":       round(ep_reward, 2),
+                "hopper":       round(info.get("hopper_level", 0) * 60, 1),
+                "total_scored": round(total_scored, 1),
             }
             renderer.draw(env._robot, None, env._get_module_states(), info=hud)
 
@@ -237,7 +241,7 @@ def main():
     reward_csv = os.path.join(LOG_DIR, f"rewards_{timestamp}.csv")
     print(f"Logging rewards to: {reward_csv}")
 
-    env = SwerveEnv()
+    env = SwerveEnv(random_start=True)
 
     checkpoint_cb = CheckpointCallback(
         save_freq   = CHECKPOINT_FREQ,

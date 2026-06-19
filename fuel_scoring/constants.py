@@ -16,6 +16,11 @@ FUEL_FILL_RATE_MAX   = 1.5     # fuel/step at MAX_SPEED_MPS (log-scaled — see 
 FUEL_FILL_MIN_SPEED  = 0.5     # m/s — zero collection below this threshold
 FUEL_SHOOT_RATE      = 0.4     # fuel units scored per step while in alliance zone (any speed)
 
+# ── Score observation normalization ───────────────────────────────────────────
+
+CONTRIBUTED_SCORE_NORM = 300.0   # realistic ceiling for one robot per episode
+TOTAL_SCORE_NORM       = 1000.0  # ceiling for full alliance (reserved for multi-robot)
+
 # ── Reward weights ─────────────────────────────────────────────────────────────
 
 RW_FUEL_SCORED              =  5.0   # per fuel unit scored (dominant signal)
