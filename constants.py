@@ -69,12 +69,15 @@ RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
 
 FIELD_IMAGE          = "assets/field_2026.png"
 
-# Pixel crop of the actual playing field within the source image.
-# The source image includes driver stations and surrounding carpet — this
-# rectangle cuts to just the field boundary lines.
-# Tuple: (x_start, y_start, width, height) in source image pixels.
-# Adjust these if the field structures don't align with the waypoints visually.
-FIELD_IMG_CROP       = (556, 86, 2790, 1385)
+# Source image pixel coordinates of the two field boundary corners,
+# measured with Paint on assets/field_2026.png (3902x1584 source).
+# FIELD_CORNER_BL: pixel for field (0, 0)                    — Blue DS, bottom-left
+# FIELD_CORNER_TR: pixel for field (FIELD_LENGTH, FIELD_WIDTH) — Red DS, top-right
+# The full image is displayed and these two points anchor the coordinate transform,
+# so driver stations and surrounding carpet remain visible.
+# Adjust if the path overlay doesn't land on the right structures.
+FIELD_CORNER_BL      = (522, 1487)   # field (0.0 m, 0.0 m)
+FIELD_CORNER_TR      = (3378,  92)   # field (16.54 m, 8.21 m)
 
 RENDER_SCALE         = 60.0    # pixels per meter
 WINDOW_PADDING       = 40      # pixels of border around the field

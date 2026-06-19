@@ -10,7 +10,7 @@ import pygame
 from field_path import WAYPOINTS
 from constants import (
     FIELD_LENGTH, FIELD_WIDTH,
-    RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE, FIELD_IMG_CROP,
+    RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE, FIELD_CORNER_BL, FIELD_CORNER_TR,
     ROBOT_BUMPER_HALF, MODULE_OFFSETS,
     ROBOT_COLOR, ROBOT_BORDER_COLOR, MODULE_COLOR,
     PATH_COLOR, WAYPOINT_COLOR, ROBOT_HEADING_COLOR,
@@ -20,41 +20,35 @@ from constants import (
 )
 
 
-def _field_to_screen(fx: float, fy: float, scale: float, pad: int, field_h: float):
-    """Convert field coordinates (m) to Pygame screen pixels."""
-    sx = int(fx * scale) + pad
-    # Flip y: field y=0 is bottom, screen y=0 is top
-    sy = int((field_h - fy) * scale) + pad
-    return sx, sy
-
-
 class Renderer:
 
     def __init__(self, record_path=None):
         if not pygame.get_init():
             pygame.init()
 
-        self._scale = RENDER_SCALE
-        self._pad   = WINDOW_PADDING
-        self._fw    = FIELD_LENGTH
-        self._fh    = FIELD_WIDTH
+        self._pad = WINDOW_PADDING
 
-        field_px_w = int(FIELD_LENGTH * RENDER_SCALE)
-        field_px_h = int(FIELD_WIDTH  * RENDER_SCALE)
-        w = field_px_w + 2 * WINDOW_PADDING
-        h = field_px_h + 2 * WINDOW_PADDING
+        # Compute display scale: map source image pixels to screen pixels so
+        # that the field's horizontal extent equals RENDER_SCALE * FIELD_LENGTH.
+        # Y uses the same uniform scale (single value avoids distortion).
+        _src_field_px = FIELD_CORNER_TR[0] - FIELD_CORNER_BL[0]
+        self._disp_scale = RENDER_SCALE * FIELD_LENGTH / _src_field_px
+
+        # Load the full image and scale to display resolution.
+        field_img_raw = pygame.image.load(FIELD_IMAGE).convert()
+        src_w = field_img_raw.get_width()
+        src_h = field_img_raw.get_height()
+        disp_w = int(src_w * self._disp_scale)
+        disp_h = int(src_h * self._disp_scale)
+        self._field_img = pygame.transform.smoothscale(field_img_raw, (disp_w, disp_h))
+
+        w = disp_w + 2 * WINDOW_PADDING
+        h = disp_h + 2 * WINDOW_PADDING
 
         self.screen = pygame.display.set_mode((w, h))
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock  = pygame.time.Clock()
         self._font  = pygame.font.SysFont("consolas", 13)
-
-        field_img_raw   = pygame.image.load(FIELD_IMAGE).convert()
-        # Crop to the actual playing field boundary (excludes driver stations and
-        # surrounding carpet), then scale to the render resolution.
-        crop_x, crop_y, crop_w, crop_h = FIELD_IMG_CROP
-        field_img_crop  = field_img_raw.subsurface((crop_x, crop_y, crop_w, crop_h))
-        self._field_img = pygame.transform.smoothscale(field_img_crop, (field_px_w, field_px_h))
 
         self._video_writer = None
         if record_path is not None:
@@ -105,8 +99,16 @@ class Renderer:
 
     # ── Drawing helpers ────────────────────────────────────────────────────────
 
-    def _fs(self, fx, fy):
-        return _field_to_screen(fx, fy, self._scale, self._pad, self._fh)
+    def _fs(self, fx: float, fy: float):
+        """Field coords (m) → screen pixels using the two calibration corners."""
+        # Linear interpolation in source image pixels
+        t_x = fx / FIELD_LENGTH
+        t_y = fy / FIELD_WIDTH
+        img_x = FIELD_CORNER_BL[0] + t_x * (FIELD_CORNER_TR[0] - FIELD_CORNER_BL[0])
+        img_y = FIELD_CORNER_BL[1] + t_y * (FIELD_CORNER_TR[1] - FIELD_CORNER_BL[1])
+        sx = int(img_x * self._disp_scale) + self._pad
+        sy = int(img_y * self._disp_scale) + self._pad
+        return sx, sy
 
     def _handle_events(self):
         for event in pygame.event.get():
