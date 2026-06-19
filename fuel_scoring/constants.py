@@ -18,7 +18,8 @@ FUEL_SHOOT_RATE      = 0.4     # fuel units scored per step while in alliance zo
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
 
-RW_FUEL_SCORED             =  5.0    # per fuel unit scored (dominant signal)
-RW_FUEL_COLLECTED          =  0.3    # per fuel unit collected in neutral zone
-RW_FULL_HOPPER_IN_NEUTRAL  = -0.5   # per step: hopper full but still in neutral zone
-RW_COLLISION_PENALTY       = -25.0  # one-time hit on wall/obstacle collision
+RW_FUEL_SCORED              =  5.0   # per fuel unit scored (dominant signal)
+RW_FUEL_COLLECTED           =  0.3   # per fuel unit collected in neutral zone
+RW_FULL_HOPPER_IN_NEUTRAL   = -0.5  # per step: hopper full but still in neutral zone
+RW_EMPTY_HOPPER_IN_ALLIANCE = -0.5  # per step: hopper empty but still in alliance zone
+RW_COLLISION_PENALTY        = -25.0 # one-time hit on wall/obstacle collision

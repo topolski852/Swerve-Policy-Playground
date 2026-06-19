@@ -28,7 +28,8 @@ from lib.field_constants import (
 from fuel_scoring.constants import (
     MAX_EPISODE_STEPS, SCORING_START_HOPPER,
     HOPPER_CAPACITY, FUEL_FILL_RATE_MAX, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
-    RW_FUEL_SCORED, RW_FUEL_COLLECTED, RW_FULL_HOPPER_IN_NEUTRAL,
+    RW_FUEL_SCORED, RW_FUEL_COLLECTED,
+    RW_FULL_HOPPER_IN_NEUTRAL, RW_EMPTY_HOPPER_IN_ALLIANCE,
     RW_COLLISION_PENALTY,
 )
 
@@ -162,14 +163,21 @@ class SwerveEnv(gym.Env):
         r_fuel_scored    = RW_FUEL_SCORED   * fuel_scored
         r_fuel_collected = RW_FUEL_COLLECTED * fuel_collected
 
-        # Penalty for sitting in neutral with a full hopper — encourages returning
-        hopper_full_in_neutral = (
-            NEUTRAL_MIN_X < self._robot.x < NEUTRAL_MAX_X and
-            self._hopper >= HOPPER_CAPACITY
+        # Penalty: full hopper sitting in neutral — go score it
+        r_full_hopper = (
+            RW_FULL_HOPPER_IN_NEUTRAL
+            if NEUTRAL_MIN_X < self._robot.x < NEUTRAL_MAX_X and self._hopper >= HOPPER_CAPACITY
+            else 0.0
         )
-        r_full_hopper = RW_FULL_HOPPER_IN_NEUTRAL if hopper_full_in_neutral else 0.0
 
-        reward = r_fuel_scored + r_fuel_collected + r_full_hopper
+        # Penalty: empty hopper sitting in alliance — go collect more
+        r_empty_alliance = (
+            RW_EMPTY_HOPPER_IN_ALLIANCE
+            if self._robot.x < BLUE_ALLIANCE_MAX_X and self._hopper <= 0
+            else 0.0
+        )
+
+        reward = r_fuel_scored + r_fuel_collected + r_full_hopper + r_empty_alliance
 
         info = {
             "fuel_scored":    fuel_scored,
