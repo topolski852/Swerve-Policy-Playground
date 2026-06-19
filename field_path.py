@@ -34,12 +34,14 @@ WAYPOINTS = [
     # ── Midfield crossing (second pass) ───────────────────────────────────────
     ( 8.27, 4.10),   # 5  midfield crossing
 
-    # ── Red loop (right side) — counterclockwise ──────────────────────────────
-    # Enter bottom via Red BumpRight, up the right side, exit top via Red BumpLeft
-    (10.64, 2.61),   # 6  neutral side of Red BumpRight  (BUMP_NEUTRAL − 0.5m)
-    (13.34, 2.61),   # 7  alliance side of Red BumpRight (BUMP_ALLIANCE + 0.5m)
-    (13.34, 5.60),   # 8  alliance side of Red BumpLeft
-    (10.64, 5.60),   # 9  neutral side of Red BumpLeft
+    # ── Red loop (right side) — clockwise ────────────────────────────────────
+    # Enter top via Red BumpLeft, down the right side, exit bottom via Red BumpRight.
+    # Entering from the TOP (opposite to the blue loop's exit direction) is what
+    # creates the crossing at the midfield point and gives the path its figure-8 shape.
+    (10.64, 5.60),   # 6  neutral side of Red BumpLeft   (wp 7 in the layout)
+    (13.34, 5.60),   # 7  alliance side of Red BumpLeft  (wp 8)
+    (13.34, 2.61),   # 8  alliance side of Red BumpRight (wp 9)
+    (10.64, 2.61),   # 9  neutral side of Red BumpRight  (wp 10)
 
     # ── Back to start ─────────────────────────────────────────────────────────
     ( 8.27, 4.10),   # 10 closed loop
