@@ -63,7 +63,7 @@ python plot_rewards.py   # auto-selects the latest log in logs/
 |---|---|
 | [`constants.py`](constants.py) | Every tunable parameter in one place — robot geometry, reward weights, render config, training hyperparams |
 | [`kinematics.py`](kinematics.py) | WPILib-equivalent swerve IK, `ChassisSpeeds.discretize()`, wheel-speed desaturation, anti-jitter angle hold |
-| [`field_path.py`](field_path.py) | Hardcoded 15-waypoint FRC-style loop, arc-length parameterization, monotonic waypoint tracker |
+| [`field_path.py`](field_path.py) | Hardcoded figure-8 path around both Alliance Hubs, arc-length parameterization, monotonic waypoint tracker |
 | [`swerve_env.py`](swerve_env.py) | Gymnasium environment — observation space, action space, reward function |
 | [`renderer.py`](renderer.py) | Shared Pygame renderer used by both live training evals and the playback script |
 | [`train.py`](train.py) | SAC training loop with checkpoint saving, reward CSV logging, and optional MP4 capture |
