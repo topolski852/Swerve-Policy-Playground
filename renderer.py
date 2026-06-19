@@ -34,13 +34,12 @@ class Renderer:
         _src_field_px = FIELD_CORNER_TR[0] - FIELD_CORNER_BL[0]
         self._disp_scale = RENDER_SCALE * FIELD_LENGTH / _src_field_px
 
-        # Load the full image and scale to display resolution.
-        field_img_raw = pygame.image.load(FIELD_IMAGE).convert()
+        # Load image without .convert() first — .convert() requires a display mode.
+        field_img_raw = pygame.image.load(FIELD_IMAGE)
         src_w = field_img_raw.get_width()
         src_h = field_img_raw.get_height()
         disp_w = int(src_w * self._disp_scale)
         disp_h = int(src_h * self._disp_scale)
-        self._field_img = pygame.transform.smoothscale(field_img_raw, (disp_w, disp_h))
 
         w = disp_w + 2 * WINDOW_PADDING
         h = disp_h + 2 * WINDOW_PADDING
@@ -49,6 +48,9 @@ class Renderer:
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock  = pygame.time.Clock()
         self._font  = pygame.font.SysFont("consolas", 13)
+
+        # Now that the display exists, convert and scale.
+        self._field_img = pygame.transform.smoothscale(field_img_raw.convert(), (disp_w, disp_h))
 
         self._video_writer = None
         if record_path is not None:
