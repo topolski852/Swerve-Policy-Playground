@@ -69,6 +69,13 @@ RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
 
 FIELD_IMAGE          = "assets/field_2026.png"
 
+# Pixel crop of the actual playing field within the source image.
+# The source image includes driver stations and surrounding carpet — this
+# rectangle cuts to just the field boundary lines.
+# Tuple: (x_start, y_start, width, height) in source image pixels.
+# Adjust these if the field structures don't align with the waypoints visually.
+FIELD_IMG_CROP       = (556, 86, 2790, 1385)
+
 RENDER_SCALE         = 60.0    # pixels per meter
 WINDOW_PADDING       = 40      # pixels of border around the field
 

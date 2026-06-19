@@ -23,21 +23,23 @@ WAYPOINTS = [
     ( 8.27, 4.10),   # 0  start/end — midfield crossing
 
     # ── Blue loop (left side) — counterclockwise ──────────────────────────────
-    # Enter top via BumpLeft, down the left side, exit bottom via BumpRight
-    ( 5.40, 5.60),   # 1  BUMP_NEUTRAL  — Blue BumpLeft, neutral side
-    ( 3.70, 5.60),   # 2  BUMP_ALLIANCE — Blue BumpLeft, alliance side
-    ( 3.70, 2.61),   # 3  BUMP_ALLIANCE — Blue BumpRight, alliance side
-    ( 5.40, 2.61),   # 4  BUMP_NEUTRAL  — Blue BumpRight, neutral side
+    # Enter top via BumpLeft, down the left side, exit bottom via BumpRight.
+    # Waypoints sit ~0.5m outside the bump entry/exit nodes so the robot aims
+    # for a clear point beyond the structure, not the edge of it.
+    ( 5.90, 5.60),   # 1  neutral side of Blue BumpLeft  (BUMP_NEUTRAL + 0.5m)
+    ( 3.20, 5.60),   # 2  alliance side of Blue BumpLeft (BUMP_ALLIANCE − 0.5m)
+    ( 3.20, 2.61),   # 3  alliance side of Blue BumpRight
+    ( 5.90, 2.61),   # 4  neutral side of Blue BumpRight
 
     # ── Midfield crossing (second pass) ───────────────────────────────────────
     ( 8.27, 4.10),   # 5  midfield crossing
 
     # ── Red loop (right side) — counterclockwise ──────────────────────────────
     # Enter bottom via Red BumpRight, up the right side, exit top via Red BumpLeft
-    (11.14, 2.61),   # 6  BUMP_NEUTRAL  — Red BumpRight, neutral side
-    (12.84, 2.61),   # 7  BUMP_ALLIANCE — Red BumpRight, alliance side
-    (12.84, 5.60),   # 8  BUMP_ALLIANCE — Red BumpLeft, alliance side
-    (11.14, 5.60),   # 9  BUMP_NEUTRAL  — Red BumpLeft, neutral side
+    (10.64, 2.61),   # 6  neutral side of Red BumpRight  (BUMP_NEUTRAL − 0.5m)
+    (13.34, 2.61),   # 7  alliance side of Red BumpRight (BUMP_ALLIANCE + 0.5m)
+    (13.34, 5.60),   # 8  alliance side of Red BumpLeft
+    (10.64, 5.60),   # 9  neutral side of Red BumpLeft
 
     # ── Back to start ─────────────────────────────────────────────────────────
     ( 8.27, 4.10),   # 10 closed loop

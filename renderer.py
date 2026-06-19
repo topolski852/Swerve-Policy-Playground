@@ -10,7 +10,7 @@ import pygame
 from field_path import WAYPOINTS
 from constants import (
     FIELD_LENGTH, FIELD_WIDTH,
-    RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE,
+    RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE, FIELD_IMG_CROP,
     ROBOT_BUMPER_HALF, MODULE_OFFSETS,
     ROBOT_COLOR, ROBOT_BORDER_COLOR, MODULE_COLOR,
     PATH_COLOR, WAYPOINT_COLOR, ROBOT_HEADING_COLOR,
@@ -49,8 +49,12 @@ class Renderer:
         self.clock  = pygame.time.Clock()
         self._font  = pygame.font.SysFont("consolas", 13)
 
-        field_img_raw  = pygame.image.load(FIELD_IMAGE).convert()
-        self._field_img = pygame.transform.smoothscale(field_img_raw, (field_px_w, field_px_h))
+        field_img_raw   = pygame.image.load(FIELD_IMAGE).convert()
+        # Crop to the actual playing field boundary (excludes driver stations and
+        # surrounding carpet), then scale to the render resolution.
+        crop_x, crop_y, crop_w, crop_h = FIELD_IMG_CROP
+        field_img_crop  = field_img_raw.subsurface((crop_x, crop_y, crop_w, crop_h))
+        self._field_img = pygame.transform.smoothscale(field_img_crop, (field_px_w, field_px_h))
 
         self._video_writer = None
         if record_path is not None:
