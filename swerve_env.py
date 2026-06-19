@@ -41,9 +41,10 @@ from constants import (
 #   dx1, dy1,                  # 4-5  waypoint+1 relative pos
 #   progress,                  # 6    arc-length progress [0, 1]
 #   cross_track,               # 7    signed cross-track error (meters, clamped)
-#   heading ]                  # 8    robot heading (radians, kept for Phase 2 compat)
-OBS_DIM = 9
-OBS_LABELS = ["vx_n","vy_n","dx0","dy0","dx1","dy1","progress","cross_track","heading"]
+#   heading,                   # 8    robot heading (radians)
+#   hopper ]                   # 9    hopper fill level [0, 1]  (Stage 2)
+OBS_DIM = 10
+OBS_LABELS = ["vx_n","vy_n","dx0","dy0","dx1","dy1","progress","cross_track","heading","hopper"]
 
 
 class SwerveEnv(gym.Env):
@@ -64,12 +65,14 @@ class SwerveEnv(gym.Env):
                               -FIELD_LENGTH, -FIELD_WIDTH,
                               -FIELD_LENGTH, -FIELD_WIDTH,
                                0.0, -OFF_PATH_LIMIT,
-                              -math.pi], dtype=np.float32)
+                              -math.pi,
+                               0.0], dtype=np.float32)
         obs_high = np.array([ 1,  1,
                                FIELD_LENGTH,  FIELD_WIDTH,
                                FIELD_LENGTH,  FIELD_WIDTH,
                                1.0,  OFF_PATH_LIMIT,
-                               math.pi], dtype=np.float32)
+                               math.pi,
+                               1.0], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
         self._robot   = SwerveState()
@@ -326,6 +329,7 @@ class SwerveEnv(gym.Env):
             prog,
             cross,
             heading,
+            self._hopper / HOPPER_CAPACITY,
         ], dtype=np.float32)
 
     def _get_module_states(self):
