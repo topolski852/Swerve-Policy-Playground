@@ -28,7 +28,7 @@ WAYPOINTS = [
     # X=4.029) while staying outside the expanded collision zone (safe limit X=3.686).
     ( 5.90, 5.60),   # 1  neutral side of Blue BumpLeft
     ( 3.20, 5.60),   # 2  alliance side — Blue BumpLeft top
-    ( 3.50, 4.10),   # 3  arch midpoint — toward Blue hub center height
+    ( 2.00, 4.10),   # 3  arch midpoint — deep into Blue alliance zone (~1.66m from left wall)
     ( 3.20, 2.61),   # 4  alliance side — Blue BumpRight bottom
     ( 5.90, 2.61),   # 5  neutral side of Blue BumpRight
 
@@ -41,7 +41,7 @@ WAYPOINTS = [
     # X=12.511) while staying outside the expanded collision zone (safe limit X=12.854).
     (10.64, 5.60),   # 7  neutral side of Red BumpLeft
     (13.34, 5.60),   # 8  alliance side — Red BumpLeft top
-    (13.00, 4.10),   # 9  arch midpoint — toward Red hub center height
+    (14.54, 4.10),   # 9  arch midpoint — deep into Red alliance zone (~1.66m from right wall)
     (13.34, 2.61),   # 10 alliance side — Red BumpRight bottom
     (10.64, 2.61),   # 11 neutral side of Red BumpRight
 
