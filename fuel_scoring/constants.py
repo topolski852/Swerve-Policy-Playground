@@ -12,8 +12,8 @@ SCORING_START_HOPPER  = 8.0            # FRC 2026: robots start with 8 fuel load
 # ── Hopper / fuel ─────────────────────────────────────────────────────────────
 
 HOPPER_CAPACITY      = 60.0    # maximum fuel units stored
-FUEL_FILL_RATE       = 0.5     # fuel units added per step while in neutral zone
-FUEL_FILL_MIN_SPEED  = 0.5     # m/s — must be moving to collect (stationary = nothing)
+FUEL_FILL_RATE_MAX   = 1.5     # fuel/step at MAX_SPEED_MPS (log-scaled — see swerve_env)
+FUEL_FILL_MIN_SPEED  = 0.5     # m/s — zero collection below this threshold
 FUEL_SHOOT_RATE      = 0.4     # fuel units scored per step while in alliance zone (any speed)
 
 # ── Reward weights ─────────────────────────────────────────────────────────────

@@ -27,7 +27,7 @@ from lib.field_constants import (
 )
 from fuel_scoring.constants import (
     MAX_EPISODE_STEPS, SCORING_START_HOPPER,
-    HOPPER_CAPACITY, FUEL_FILL_RATE, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
+    HOPPER_CAPACITY, FUEL_FILL_RATE_MAX, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
     RW_FUEL_SCORED, RW_FUEL_COLLECTED, RW_FULL_HOPPER_IN_NEUTRAL,
     RW_COLLISION_PENALTY,
 )
@@ -87,10 +87,14 @@ class SwerveEnv(gym.Env):
         speed  = math.hypot(self._robot.vx, self._robot.vy)
 
         # ── Fuel mechanics ────────────────────────────────────────────────────
-        # Collect: must be moving in neutral zone
+        # Collect: log-scaled by speed — faster movement = more fuel per step.
+        # rate = FUEL_FILL_RATE_MAX × log(speed/MIN) / log(MAX/MIN)
+        # At MIN_SPEED: 0 fuel/step. At MAX_SPEED: FUEL_FILL_RATE_MAX fuel/step.
         fuel_collected = 0.0
         if NEUTRAL_MIN_X < rx < NEUTRAL_MAX_X and speed >= FUEL_FILL_MIN_SPEED:
-            collected = min(HOPPER_CAPACITY - self._hopper, FUEL_FILL_RATE)
+            log_scale      = math.log(speed / FUEL_FILL_MIN_SPEED) / math.log(MAX_SPEED_MPS / FUEL_FILL_MIN_SPEED)
+            fill_rate      = FUEL_FILL_RATE_MAX * log_scale
+            collected      = min(HOPPER_CAPACITY - self._hopper, fill_rate)
             self._hopper  += collected
             fuel_collected = collected
 
