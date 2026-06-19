@@ -75,9 +75,7 @@ RED_ALLIANCE_MIN_X  = 12.511   # rx > this → Red Alliance Zone
 HOPPER_CAPACITY      = 60.0    # maximum fuel units stored
 FUEL_FILL_RATE       = 0.5     # fuel units added per step in neutral zone
 FUEL_FILL_MIN_SPEED  = 0.5     # m/s — must be moving to collect fuel
-FUEL_SHOOT_RATE      = 0.4     # fuel units fired per step in alliance zone
-FUEL_SHOOT_RANGE     = 2.5     # meters from hub center — covers full orbit
-FUEL_SHOOT_MIN_SPEED = 0.5     # m/s — shoot-on-the-move gate (prevents camping)
+FUEL_SHOOT_RATE      = 0.4     # fuel units drained per step while in alliance zone (no speed gate — hopper empties regardless of movement)
 
 # ── Environment / training ─────────────────────────────────────────────────────
 

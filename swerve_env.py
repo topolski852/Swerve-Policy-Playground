@@ -27,7 +27,7 @@ from constants import (
     BLUE_HUB_CENTER, RED_HUB_CENTER,
     BLUE_ALLIANCE_MAX_X, NEUTRAL_MIN_X, NEUTRAL_MAX_X, RED_ALLIANCE_MIN_X,
     HOPPER_CAPACITY, FUEL_FILL_RATE, FUEL_FILL_MIN_SPEED,
-    FUEL_SHOOT_RATE, FUEL_SHOOT_RANGE, FUEL_SHOOT_MIN_SPEED,
+    FUEL_SHOOT_RATE,
     # Reward weights
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
@@ -122,11 +122,10 @@ class SwerveEnv(gym.Env):
 
         fuel_scored = 0.0
         in_zone, hub = self._in_alliance_zone()
-        if in_zone and self._hopper > 0 and speed >= FUEL_SHOOT_MIN_SPEED:
-            if math.hypot(rx - hub[0], ry - hub[1]) <= FUEL_SHOOT_RANGE:
-                shot = min(self._hopper, FUEL_SHOOT_RATE)
-                self._hopper -= shot
-                fuel_scored = shot
+        if in_zone and self._hopper > 0:
+            shot = min(self._hopper, FUEL_SHOOT_RATE)
+            self._hopper -= shot
+            fuel_scored = shot
 
         advanced = self._tracker.update(rx, ry)
 
