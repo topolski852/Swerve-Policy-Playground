@@ -280,8 +280,9 @@ def main():
         print(f"Render-eval ON: window opens/closes every {args.eval_freq:,} steps.")
 
     if args.render_capture:
-        callbacks.append(RecordEvalCallback())
-        print(f"Render-capture ON: MP4s will be saved to {RECORDINGS_DIR}/ at steps {RECORD_STEPS}")
+        rec_dir = os.path.join(RECORDINGS_DIR, f"run_{timestamp}")
+        callbacks.append(RecordEvalCallback(recordings_dir=rec_dir))
+        print(f"Render-capture ON: MP4s will be saved to {rec_dir}/ at steps {RECORD_STEPS}")
 
     if args.resume:
         print(f"Resuming from: {args.resume}")
