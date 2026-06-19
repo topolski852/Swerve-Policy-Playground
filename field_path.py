@@ -23,28 +23,30 @@ WAYPOINTS = [
     ( 8.27, 4.10),   # 0  start/end — midfield crossing
 
     # ── Blue loop (left side) — counterclockwise ──────────────────────────────
-    # Enter top via BumpLeft, down the left side, exit bottom via BumpRight.
-    # Waypoints sit ~0.5m outside the bump entry/exit nodes so the robot aims
-    # for a clear point beyond the structure, not the edge of it.
-    ( 5.90, 5.60),   # 1  neutral side of Blue BumpLeft  (BUMP_NEUTRAL + 0.5m)
-    ( 3.20, 5.60),   # 2  alliance side of Blue BumpLeft (BUMP_ALLIANCE − 0.5m)
-    ( 3.20, 2.61),   # 3  alliance side of Blue BumpRight
-    ( 5.90, 2.61),   # 4  neutral side of Blue BumpRight
+    # Enter top via BumpLeft, arch around the Blue hub, exit bottom via BumpRight.
+    # wp3 is the arch midpoint: X=3.50 curves toward the hub face (left wall at
+    # X=4.029) while staying outside the expanded collision zone (safe limit X=3.686).
+    ( 5.90, 5.60),   # 1  neutral side of Blue BumpLeft
+    ( 3.20, 5.60),   # 2  alliance side — Blue BumpLeft top
+    ( 3.50, 4.10),   # 3  arch midpoint — toward Blue hub center height
+    ( 3.20, 2.61),   # 4  alliance side — Blue BumpRight bottom
+    ( 5.90, 2.61),   # 5  neutral side of Blue BumpRight
 
     # ── Midfield crossing (second pass) ───────────────────────────────────────
-    ( 8.27, 4.10),   # 5  midfield crossing
+    ( 8.27, 4.10),   # 6  midfield crossing
 
     # ── Red loop (right side) — clockwise ────────────────────────────────────
-    # Enter top via Red BumpLeft, down the right side, exit bottom via Red BumpRight.
-    # Entering from the TOP (opposite to the blue loop's exit direction) is what
-    # creates the crossing at the midfield point and gives the path its figure-8 shape.
-    (10.64, 5.60),   # 6  neutral side of Red BumpLeft   (wp 7 in the layout)
-    (13.34, 5.60),   # 7  alliance side of Red BumpLeft  (wp 8)
-    (13.34, 2.61),   # 8  alliance side of Red BumpRight (wp 9)
-    (10.64, 2.61),   # 9  neutral side of Red BumpRight  (wp 10)
+    # Enter top via Red BumpLeft, arch around the Red hub, exit bottom via Red BumpRight.
+    # wp9 is the arch midpoint: X=13.00 curves toward the hub face (right wall at
+    # X=12.511) while staying outside the expanded collision zone (safe limit X=12.854).
+    (10.64, 5.60),   # 7  neutral side of Red BumpLeft
+    (13.34, 5.60),   # 8  alliance side — Red BumpLeft top
+    (13.00, 4.10),   # 9  arch midpoint — toward Red hub center height
+    (13.34, 2.61),   # 10 alliance side — Red BumpRight bottom
+    (10.64, 2.61),   # 11 neutral side of Red BumpRight
 
     # ── Back to start ─────────────────────────────────────────────────────────
-    ( 8.27, 4.10),   # 10 closed loop
+    ( 8.27, 4.10),   # 12 closed loop
 ]
 
 
