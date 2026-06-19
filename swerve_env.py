@@ -23,10 +23,16 @@ from constants import (
     MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
     FIELD_LENGTH, FIELD_WIDTH,
     ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
+    # Hub / zone / fuel
+    BLUE_HUB_CENTER, RED_HUB_CENTER,
+    BLUE_ALLIANCE_MAX_X, NEUTRAL_MIN_X, NEUTRAL_MAX_X, RED_ALLIANCE_MIN_X,
+    HOPPER_CAPACITY, FUEL_FILL_RATE, FUEL_FILL_MIN_SPEED,
+    FUEL_SHOOT_RATE, FUEL_SHOOT_RANGE, FUEL_SHOOT_MIN_SPEED,
     # Reward weights
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
     RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY, RW_COLLISION_PENALTY,
+    RW_FUEL_SCORED,
 )
 
 # Observation vector indices (document here so swerve_env and render agree)
@@ -72,6 +78,7 @@ class SwerveEnv(gym.Env):
         self._prev_action    = np.zeros(3, dtype=np.float32)
         self._prev_arc_pos   = 0.0
         self._step_count     = 0
+        self._hopper         = 0.0
 
         self._renderer = None   # created lazily on first render() call
 
@@ -88,6 +95,7 @@ class SwerveEnv(gym.Env):
         _, _, _, _, _, arc, _ = nearest_segment(sx, sy)
         self._prev_arc_pos = arc
         self._step_count   = 0
+        self._hopper       = 0.0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -102,6 +110,21 @@ class SwerveEnv(gym.Env):
         self._step_count += 1
 
         rx, ry = self._robot.x, self._robot.y
+
+        # ── Fuel collection and scoring ───────────────────────────────────────
+        speed = math.hypot(self._robot.vx, self._robot.vy)
+
+        if self._in_neutral_zone() and speed >= FUEL_FILL_MIN_SPEED:
+            self._hopper = min(HOPPER_CAPACITY, self._hopper + FUEL_FILL_RATE)
+
+        fuel_scored = 0.0
+        in_zone, hub = self._in_alliance_zone()
+        if in_zone and self._hopper > 0 and speed >= FUEL_SHOOT_MIN_SPEED:
+            if math.hypot(rx - hub[0], ry - hub[1]) <= FUEL_SHOOT_RANGE:
+                shot = min(self._hopper, FUEL_SHOOT_RATE)
+                self._hopper -= shot
+                fuel_scored = shot
+
         advanced = self._tracker.update(rx, ry)
 
         # Restrict segment search to near the current tracker position.
@@ -113,7 +136,7 @@ class SwerveEnv(gym.Env):
         cross_track = dist * cross_sign
 
         reward, info = self._compute_reward(
-            seg_idx, arc_pos, cross_track, action, advanced
+            seg_idx, arc_pos, cross_track, action, advanced, fuel_scored
         )
 
         terminated = self._tracker.done
@@ -151,6 +174,21 @@ class SwerveEnv(gym.Env):
             self._renderer = None
 
     # ──────────────────────────────────────────────────────────────────────────
+    # Zone helpers
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _in_neutral_zone(self) -> bool:
+        return NEUTRAL_MIN_X < self._robot.x < NEUTRAL_MAX_X
+
+    def _in_alliance_zone(self):
+        """Returns (True, hub_center_tuple) or (False, None)."""
+        if self._robot.x < BLUE_ALLIANCE_MAX_X:
+            return True, BLUE_HUB_CENTER
+        if self._robot.x > RED_ALLIANCE_MIN_X:
+            return True, RED_HUB_CENTER
+        return False, None
+
+    # ──────────────────────────────────────────────────────────────────────────
     # Collision detection
     # ──────────────────────────────────────────────────────────────────────────
 
@@ -183,7 +221,7 @@ class SwerveEnv(gym.Env):
     # Reward function  <-- EDIT WEIGHTS IN constants.py
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _compute_reward(self, seg_idx, arc_pos, cross_track, action, waypoints_advanced):
+    def _compute_reward(self, seg_idx, arc_pos, cross_track, action, waypoints_advanced, fuel_scored=0.0):
         """
         Dense reward signal for path following.
 
@@ -237,9 +275,10 @@ class SwerveEnv(gym.Env):
         r_time      = RW_TIME_PENALTY  # flat per-step cost — punishes loitering
         r_waypoint  = RW_WAYPOINT_BONUS * waypoints_advanced
         r_goal      = RW_GOAL_BONUS if self._tracker.done else 0.0
+        r_fuel      = RW_FUEL_SCORED * fuel_scored
 
         reward = (r_progress + r_vel_align + r_cross +
-                  r_smooth + r_speed_mag + r_time + r_waypoint + r_goal)
+                  r_smooth + r_speed_mag + r_time + r_waypoint + r_goal + r_fuel)
 
         info = {
             "r_progress":   r_progress,
@@ -249,8 +288,11 @@ class SwerveEnv(gym.Env):
             "r_time":       r_time,
             "r_waypoint":   r_waypoint,
             "r_goal":       r_goal,
+            "r_fuel":       r_fuel,
             "arc_pos":      arc_pos,
             "cross_track":  cross_track,
+            "hopper_level": self._hopper / HOPPER_CAPACITY,
+            "fuel_scored":  fuel_scored,
         }
         return reward, info
 

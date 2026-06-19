@@ -51,6 +51,8 @@ def main():
             "y":       round(env._robot.y, 2),
             "wp":      env._tracker.current_idx,
             "reward":  round(reward, 3),
+            "hopper":  round(info.get("hopper_level", 0) * 60, 1),
+            "scoring": round(info.get("fuel_scored",  0), 2),
         }
 
         renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)

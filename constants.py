@@ -60,6 +60,25 @@ IMPASSABLE_RECTS = [
     (11.317, 0.000, 12.511, 1.654),   # Red trench, bottom wall
 ]
 
+# ── Hub scoring targets ────────────────────────────────────────────────────────
+# Midpoints of the hub IMPASSABLE_RECTS above — used as the shoot-at point.
+BLUE_HUB_CENTER = (4.626, 4.035)
+RED_HUB_CENTER  = (11.914, 4.035)
+
+# ── Zone X boundaries ─────────────────────────────────────────────────────────
+BLUE_ALLIANCE_MAX_X = 4.029    # rx < this → Blue Alliance Zone
+NEUTRAL_MIN_X       = 5.223    # rx > this (left)  → entering Neutral Zone
+NEUTRAL_MAX_X       = 11.317   # rx < this (right) → still in Neutral Zone
+RED_ALLIANCE_MIN_X  = 12.511   # rx > this → Red Alliance Zone
+
+# ── Hopper / fuel ─────────────────────────────────────────────────────────────
+HOPPER_CAPACITY      = 60.0    # maximum fuel units stored
+FUEL_FILL_RATE       = 0.5     # fuel units added per step in neutral zone
+FUEL_FILL_MIN_SPEED  = 0.5     # m/s — must be moving to collect fuel
+FUEL_SHOOT_RATE      = 0.4     # fuel units fired per step in alliance zone
+FUEL_SHOOT_RANGE     = 2.5     # meters from hub center — covers full orbit
+FUEL_SHOOT_MIN_SPEED = 0.5     # m/s — shoot-on-the-move gate (prevents camping)
+
 # ── Environment / training ─────────────────────────────────────────────────────
 
 MAX_EPISODE_STEPS   = 1500          # timeout in steps (~30 s at 20 ms)
@@ -81,6 +100,7 @@ RW_WAYPOINT_BONUS    =  2.0    # bonus each time a waypoint is reached
 RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
 RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
 RW_COLLISION_PENALTY = -25.0   # one-time penalty for hitting a hub, trench, or field wall
+RW_FUEL_SCORED       =   0.3   # reward per fuel unit fired into the hub
 
 # ── Renderer ───────────────────────────────────────────────────────────────────
 
