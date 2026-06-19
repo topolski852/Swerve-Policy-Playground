@@ -6,7 +6,7 @@
 #   python train_scoring.py                       # train silently
 #   python train_scoring.py --render-eval          # pop a window every 20k steps
 #   python train_scoring.py --render-eval --eval-freq 10000
-#   python train_scoring.py --resume fuel_scoring/checkpoints/swerve_100000_steps.zip
+#   python train_scoring.py --resume fuel_scoring/checkpoints/scoring_100000_steps.zip
 #
 # Outputs:
 #   fuel_scoring/checkpoints/   model snapshots every CHECKPOINT_FREQ steps
@@ -17,14 +17,12 @@
 import os
 import csv
 import argparse
-import numpy as np
 from datetime import datetime
 
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
 from fuel_scoring.swerve_env import SwerveEnv
-from fuel_scoring.field_path import WAYPOINTS, TOTAL_LENGTH
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
@@ -83,7 +81,7 @@ class RenderEvalCallback(BaseCallback):
         print(f"\n[Render eval @ step {self.num_timesteps:,}]")
 
         env      = SwerveEnv()
-        renderer = Renderer(waypoints=WAYPOINTS)
+        renderer = Renderer(waypoints=None)
         obs, _   = env.reset()
         done     = False
         ep_reward = 0.0
@@ -91,7 +89,7 @@ class RenderEvalCallback(BaseCallback):
 
         for _ in range(5):
             pygame.event.pump()
-            renderer.draw(env._robot, env._tracker, env._get_module_states())
+            renderer.draw(env._robot, None, env._get_module_states())
 
         while not done:
             for event in pygame.event.get():
@@ -108,16 +106,15 @@ class RenderEvalCallback(BaseCallback):
             step += 1
 
             hud = {
-                "train_step": self.num_timesteps,
-                "eval_step":  step,
-                "reward":     round(ep_reward, 2),
-                "progress%":  round(info.get("arc_pos", 0) / TOTAL_LENGTH * 100, 1),
-                "hopper":     round(info.get("hopper_level", 0) * 60, 1),
+                "train_step":  self.num_timesteps,
+                "eval_step":   step,
+                "reward":      round(ep_reward, 2),
+                "hopper":      round(info.get("hopper_level", 0) * 60, 1),
                 "fuel_scored": round(info.get("fuel_scored", 0), 2),
             }
-            renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
+            renderer.draw(env._robot, None, env._get_module_states(), info=hud)
 
-        status = "SUCCESS" if terminated else ("QUIT" if step == 0 else "TIMEOUT/OFF-PATH")
+        status = "SUCCESS" if terminated else ("QUIT" if step == 0 else "TIMEOUT")
         print(f"  {status}  steps={step}  reward={ep_reward:.2f}")
 
         renderer.close()
@@ -149,7 +146,7 @@ class RecordEvalCallback(BaseCallback):
         print(f"\n[Recording @ step {self.num_timesteps:,}] -> {path}")
 
         env      = SwerveEnv()
-        renderer = Renderer(waypoints=WAYPOINTS, record_path=path)
+        renderer = Renderer(waypoints=None, record_path=path)
         obs, _   = env.reset()
         done     = False
         ep_reward = 0.0
@@ -157,7 +154,7 @@ class RecordEvalCallback(BaseCallback):
 
         for _ in range(5):
             pygame.event.pump()
-            renderer.draw(env._robot, env._tracker, env._get_module_states())
+            renderer.draw(env._robot, None, env._get_module_states())
 
         while not done:
             for event in pygame.event.get():
@@ -177,13 +174,12 @@ class RecordEvalCallback(BaseCallback):
                 "train_step":  step_count,
                 "eval_step":   step,
                 "reward":      round(ep_reward, 2),
-                "progress%":   round(info.get("arc_pos", 0) / TOTAL_LENGTH * 100, 1),
                 "hopper":      round(info.get("hopper_level", 0) * 60, 1),
                 "fuel_scored": round(info.get("fuel_scored", 0), 2),
             }
-            renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
+            renderer.draw(env._robot, None, env._get_module_states(), info=hud)
 
-        status = "SUCCESS" if terminated else "TIMEOUT/OFF-PATH"
+        status = "SUCCESS" if terminated else "TIMEOUT"
         print(f"  {status}  frames={step}  reward={ep_reward:.2f}  saved: {path}")
 
         renderer.close()
@@ -199,7 +195,7 @@ class RewardLogger(BaseCallback):
         super().__init__()
         self._path = log_path
         self._ep_reward = 0.0
-        self._f   = None
+        self._f      = None
         self._writer = None
 
     def _on_training_start(self):
@@ -227,14 +223,11 @@ class RewardLogger(BaseCallback):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--resume", type=str, default=None,
-                        help="Path to a checkpoint .zip to resume from")
+    parser.add_argument("--resume", type=str, default=None)
     parser.add_argument("--steps", type=int, default=TOTAL_TIMESTEPS)
-    parser.add_argument("--render-eval", action="store_true",
-                        help="Open a Pygame window for one eval episode every --eval-freq steps")
+    parser.add_argument("--render-eval", action="store_true")
     parser.add_argument("--eval-freq", type=int, default=EVAL_FREQ_DEFAULT)
-    parser.add_argument("--render-capture", action="store_true",
-                        help=f"Record MP4s at RECORD_STEPS to {RECORDINGS_DIR}/")
+    parser.add_argument("--render-capture", action="store_true")
     args = parser.parse_args()
 
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)

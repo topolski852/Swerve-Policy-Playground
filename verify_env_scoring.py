@@ -50,7 +50,8 @@ check("obs always within bounds during rollout",
 if rewards:
     print(f"\n  Random-policy episode rewards over {episodes} eps:")
     print(f"    mean={np.mean(rewards):.2f}  min={np.min(rewards):.2f}  max={np.max(rewards):.2f}")
-    check("reward range is non-trivial (not all zero)", np.std(rewards) > 0.01)
+    check("some positive reward possible (scoring mechanics active)",
+          np.max(rewards) > 0)
 
 env.close()
 print()

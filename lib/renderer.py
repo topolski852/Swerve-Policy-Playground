@@ -81,7 +81,7 @@ class Renderer:
 
         self._draw_field_border()
         self._draw_obstacles()
-        if self._waypoints:
+        if self._waypoints and tracker is not None:
             self._draw_path(tracker.current_idx)
         self._draw_robot(robot_state, module_states)
         if info:
