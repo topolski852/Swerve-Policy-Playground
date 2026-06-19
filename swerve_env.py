@@ -22,10 +22,11 @@ from constants import (
     MAX_SPEED_MPS, MAX_ANGULAR_RPS,
     MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
     FIELD_LENGTH, FIELD_WIDTH,
+    ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
     # Reward weights
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
-    RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY,
+    RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY, RW_COLLISION_PENALTY,
 )
 
 # Observation vector indices (document here so swerve_env and render agree)
@@ -116,12 +117,17 @@ class SwerveEnv(gym.Env):
         )
 
         terminated = self._tracker.done
+        collision  = self._check_collision()
         truncated  = (dist > OFF_PATH_LIMIT or
-                      self._step_count >= MAX_EPISODE_STEPS)
+                      self._step_count >= MAX_EPISODE_STEPS or
+                      collision)
 
         if dist > OFF_PATH_LIMIT:
             reward += RW_OFF_PATH_PENALTY
             info["off_path"] = True
+        if collision:
+            reward += RW_COLLISION_PENALTY
+            info["collision"] = True
 
         self._prev_action  = action.copy()
         self._prev_arc_pos = arc_pos
@@ -143,6 +149,35 @@ class SwerveEnv(gym.Env):
         if self._renderer is not None:
             self._renderer.close()
             self._renderer = None
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Collision detection
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _check_collision(self) -> bool:
+        """
+        True if the robot overlaps an impassable zone or the field boundary.
+
+        The robot is modelled as a circle with radius ROBOT_BUMPER_HALF.
+        For rectangular obstacles, this is equivalent to checking whether the
+        robot centre falls inside the obstacle expanded by ROBOT_BUMPER_HALF
+        on all sides — a standard swept-circle vs AABB test.
+        """
+        rx, ry = self._robot.x, self._robot.y
+        r = ROBOT_BUMPER_HALF
+
+        # Field boundary walls
+        if rx - r < 0 or rx + r > FIELD_LENGTH:
+            return True
+        if ry - r < 0 or ry + r > FIELD_WIDTH:
+            return True
+
+        # Impassable field structures (hubs and trenches)
+        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
+            if rx > ox1 - r and rx < ox2 + r and ry > oy1 - r and ry < oy2 + r:
+                return True
+
+        return False
 
     # ──────────────────────────────────────────────────────────────────────────
     # Reward function  <-- EDIT WEIGHTS IN constants.py

@@ -11,7 +11,7 @@ from field_path import WAYPOINTS
 from constants import (
     FIELD_LENGTH, FIELD_WIDTH,
     RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE, FIELD_CORNER_BL, FIELD_CORNER_TR,
-    ROBOT_BUMPER_HALF, MODULE_OFFSETS,
+    ROBOT_BUMPER_HALF, MODULE_OFFSETS, IMPASSABLE_RECTS,
     ROBOT_COLOR, ROBOT_BORDER_COLOR, MODULE_COLOR,
     PATH_COLOR, WAYPOINT_COLOR, ROBOT_HEADING_COLOR,
     ARROW_MAX_PIXELS, ARROW_COLOR, ARROW_WIDTH, ARROW_HEAD_SIZE,
@@ -80,6 +80,7 @@ class Renderer:
         self.screen.fill((30, 30, 30))
 
         self._draw_field_border()
+        self._draw_obstacles()
         self._draw_path(tracker.current_idx)
         self._draw_robot(robot_state, module_states)
         if info:
@@ -129,6 +130,23 @@ class Renderer:
 
     def _draw_field_border(self):
         self.screen.blit(self._field_img, (self._pad, self._pad))
+
+    def _draw_obstacles(self):
+        """Semi-transparent red overlay on each impassable zone."""
+        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
+            # All four corners → pick screen-space bounding box (Y is flipped)
+            sx1, sy1 = self._fs(ox1, oy1)
+            sx2, sy2 = self._fs(ox2, oy2)
+            rx = min(sx1, sx2)
+            ry = min(sy1, sy2)
+            rw = abs(sx2 - sx1)
+            rh = abs(sy2 - sy1)
+            if rw < 1 or rh < 1:
+                continue
+            overlay = pygame.Surface((rw, rh), pygame.SRCALPHA)
+            overlay.fill((220, 50, 50, 60))
+            self.screen.blit(overlay, (rx, ry))
+            pygame.draw.rect(self.screen, (220, 50, 50), (rx, ry, rw, rh), 1)
 
     def _draw_path(self, active_wp_idx: int):
         pts = [self._fs(wx, wy) for wx, wy in WAYPOINTS]

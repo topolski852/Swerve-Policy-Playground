@@ -44,6 +44,22 @@ DT = 0.02   # simulation timestep (seconds) — matches WPILib 20 ms loop
 FIELD_LENGTH =  16.54   # meters, x-axis (Blue DS → Red DS)
 FIELD_WIDTH  =   8.21   # meters, y-axis (right wall → left wall from Blue DS)
 
+# ── Field obstacles ────────────────────────────────────────────────────────────
+# Impassable zones as axis-aligned rectangles: (x_min, y_min, x_max, y_max) meters.
+# Bump corridors (BumpLeft / BumpRight) are passable and intentionally omitted.
+# The gap between hub and trench is not yet characterized — treated as open for now.
+IMPASSABLE_RECTS = [
+    # ── Hubs (central scoring structure) ──────────────────────────────────────
+    ( 4.029, 3.438,  5.223, 4.632),   # Blue hub
+    (11.317, 3.438, 12.511, 4.632),   # Red hub
+
+    # ── Trenches (run wall-to-wall — no way around them) ──────────────────────
+    ( 4.029, 6.556,  5.223, 8.210),   # Blue trench, top wall
+    ( 4.029, 0.000,  5.223, 1.654),   # Blue trench, bottom wall
+    (11.317, 6.556, 12.511, 8.210),   # Red trench, top wall
+    (11.317, 0.000, 12.511, 1.654),   # Red trench, bottom wall
+]
+
 # ── Environment / training ─────────────────────────────────────────────────────
 
 MAX_EPISODE_STEPS   = 1500          # timeout in steps (~30 s at 20 ms)
@@ -64,6 +80,7 @@ RW_TIME_PENALTY      = -0.02   # per-step cost — creates urgency, prevents inf
 RW_WAYPOINT_BONUS    =  2.0    # bonus each time a waypoint is reached
 RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
 RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
+RW_COLLISION_PENALTY = -25.0   # one-time penalty for hitting a hub, trench, or field wall
 
 # ── Renderer ───────────────────────────────────────────────────────────────────
 
