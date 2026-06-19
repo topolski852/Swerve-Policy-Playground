@@ -1,11 +1,10 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # render.py
 # Load a saved checkpoint and render the robot driving the path in Pygame.
-# Use this to record clean footage from any point in training.
 #
 # Usage:
-#   python render.py checkpoints/swerve_50000_steps
-#   python render.py checkpoints/swerve_final --speed 0.5
+#   python render.py path_following/checkpoints/swerve_final
+#   python render.py path_following/checkpoints/swerve_50000_steps --speed 0.5
 # ──────────────────────────────────────────────────────────────────────────────
 
 import argparse
@@ -13,12 +12,13 @@ import time
 import pygame
 
 from stable_baselines3 import SAC
-from swerve_env import SwerveEnv
-from renderer import Renderer
+from path_following.swerve_env import SwerveEnv
+from path_following.field_path import WAYPOINTS, TOTAL_LENGTH
+from lib.renderer import Renderer
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Render a trained swerve checkpoint")
+    parser = argparse.ArgumentParser(description="Render a trained path-following checkpoint")
     parser.add_argument("checkpoint", help="Path to .zip checkpoint file")
     parser.add_argument("--episodes", type=int, default=5,
                         help="Number of episodes to render (default: 5)")
@@ -27,7 +27,7 @@ def main():
     args = parser.parse_args()
 
     env      = SwerveEnv()
-    renderer = Renderer()
+    renderer = Renderer(waypoints=WAYPOINTS)
 
     print(f"Loading checkpoint: {args.checkpoint}")
     model = SAC.load(args.checkpoint, device="cpu")
@@ -50,19 +50,12 @@ def main():
             hud = {
                 "step":      step,
                 "reward":    ep_reward,
-                "progress":  round(float(info.get("arc_pos", 0)) /
-                                   __import__("field_path").TOTAL_LENGTH * 100, 1),
+                "progress":  round(float(info.get("arc_pos", 0)) / TOTAL_LENGTH * 100, 1),
                 "cross(m)":  round(float(info.get("cross_track", 0)), 3),
             }
 
-            renderer.draw(
-                env._robot,
-                env._tracker,
-                env._get_module_states(),
-                info=hud,
-            )
+            renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
-            # Respect playback speed
             if args.speed < 1.0:
                 time.sleep(0.02 / args.speed - 0.02)
 

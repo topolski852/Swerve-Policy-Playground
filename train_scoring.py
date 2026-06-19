@@ -1,17 +1,17 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# train.py
-# SAC training script for the path-following experiment.
+# train_scoring.py
+# SAC training script for the fuel scoring experiment.
 #
 # Usage:
-#   python train.py                              # train silently
-#   python train.py --render-eval                # pop a window every 20k steps
-#   python train.py --render-eval --eval-freq 10000
-#   python train.py --resume path_following/checkpoints/swerve_100000_steps.zip
+#   python train_scoring.py                       # train silently
+#   python train_scoring.py --render-eval          # pop a window every 20k steps
+#   python train_scoring.py --render-eval --eval-freq 10000
+#   python train_scoring.py --resume fuel_scoring/checkpoints/swerve_100000_steps.zip
 #
 # Outputs:
-#   path_following/checkpoints/   model snapshots every CHECKPOINT_FREQ steps
-#   path_following/logs/          rewards CSV for plotting
-#   path_following/recordings/    MP4s at RECORD_STEPS (with --render-capture)
+#   fuel_scoring/checkpoints/   model snapshots every CHECKPOINT_FREQ steps
+#   fuel_scoring/logs/          rewards CSV for plotting
+#   fuel_scoring/recordings/    MP4s at RECORD_STEPS (with --render-capture)
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -23,17 +23,17 @@ from datetime import datetime
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
 
-from path_following.swerve_env import SwerveEnv
-from path_following.field_path import WAYPOINTS, TOTAL_LENGTH
+from fuel_scoring.swerve_env import SwerveEnv
+from fuel_scoring.field_path import WAYPOINTS, TOTAL_LENGTH
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
 TOTAL_TIMESTEPS   = 2_000_000
 CHECKPOINT_FREQ   = 10_000
 EVAL_FREQ_DEFAULT = 20_000
-LOG_DIR           = "path_following/logs"
-CHECKPOINT_DIR    = "path_following/checkpoints"
-RECORDINGS_DIR    = "path_following/recordings"
+LOG_DIR           = "fuel_scoring/logs"
+CHECKPOINT_DIR    = "fuel_scoring/checkpoints"
+RECORDINGS_DIR    = "fuel_scoring/recordings"
 
 RECORD_STEPS = [
     500, 1_000, 2_000,
@@ -112,6 +112,8 @@ class RenderEvalCallback(BaseCallback):
                 "eval_step":  step,
                 "reward":     round(ep_reward, 2),
                 "progress%":  round(info.get("arc_pos", 0) / TOTAL_LENGTH * 100, 1),
+                "hopper":     round(info.get("hopper_level", 0) * 60, 1),
+                "fuel_scored": round(info.get("fuel_scored", 0), 2),
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
@@ -172,10 +174,12 @@ class RecordEvalCallback(BaseCallback):
             step += 1
 
             hud = {
-                "train_step": step_count,
-                "eval_step":  step,
-                "reward":     round(ep_reward, 2),
-                "progress%":  round(info.get("arc_pos", 0) / TOTAL_LENGTH * 100, 1),
+                "train_step":  step_count,
+                "eval_step":   step,
+                "reward":      round(ep_reward, 2),
+                "progress%":   round(info.get("arc_pos", 0) / TOTAL_LENGTH * 100, 1),
+                "hopper":      round(info.get("hopper_level", 0) * 60, 1),
+                "fuel_scored": round(info.get("fuel_scored", 0), 2),
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
@@ -245,7 +249,7 @@ def main():
     checkpoint_cb = CheckpointCallback(
         save_freq   = CHECKPOINT_FREQ,
         save_path   = CHECKPOINT_DIR,
-        name_prefix = "swerve",
+        name_prefix = "scoring",
         verbose     = 1,
     )
     reward_cb = RewardLogger(reward_csv)
@@ -269,7 +273,7 @@ def main():
     else:
         model = SAC(env=env, **SAC_KWARGS)
 
-    print(f"\nStarting training for {args.steps:,} timesteps on CPU.")
+    print(f"\nStarting fuel scoring training for {args.steps:,} timesteps on CPU.")
     print(f"Checkpoints saved every {CHECKPOINT_FREQ} steps to {CHECKPOINT_DIR}/")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
 
@@ -283,7 +287,7 @@ def main():
     except KeyboardInterrupt:
         print("\nTraining interrupted by user.")
 
-    final_path = os.path.join(CHECKPOINT_DIR, "swerve_final.zip")
+    final_path = os.path.join(CHECKPOINT_DIR, "scoring_final.zip")
     model.save(final_path)
     print(f"\nFinal model saved to: {final_path}")
     env.close()

@@ -1,10 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
 # plot_rewards.py
-# Plot episode reward curves from a rewards CSV produced by train.py.
+# Plot episode reward curves from a rewards CSV produced by train.py or
+# train_scoring.py.
 #
 # Usage:
-#   python plot_rewards.py                          # auto-finds latest CSV in logs/
-#   python plot_rewards.py logs/rewards_20250101_1200.csv
+#   python plot_rewards.py                                  # auto-finds latest CSV
+#   python plot_rewards.py path_following/logs/rewards_*.csv
+#   python plot_rewards.py fuel_scoring/logs/rewards_*.csv
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -34,11 +36,16 @@ def main():
     if args.csv:
         csv_path = args.csv
     else:
-        files = sorted(glob.glob("logs/rewards_*.csv"))
-        if not files:
-            print("No reward logs found in logs/. Run train.py first.")
+        # Search all experiment log directories
+        candidates = (
+            sorted(glob.glob("path_following/logs/rewards_*.csv")) +
+            sorted(glob.glob("fuel_scoring/logs/rewards_*.csv")) +
+            sorted(glob.glob("logs/rewards_*.csv"))   # legacy location
+        )
+        if not candidates:
+            print("No reward logs found. Run train.py or train_scoring.py first.")
             sys.exit(1)
-        csv_path = files[-1]
+        csv_path = candidates[-1]
         print(f"Auto-selected: {csv_path}")
 
     data = np.loadtxt(csv_path, delimiter=",", skiprows=1)
@@ -52,14 +59,11 @@ def main():
     fig.patch.set_facecolor("#1e1e1e")
     ax.set_facecolor("#2a2a2a")
 
-    # Raw rewards (faint)
     ax.plot(timesteps, rewards, color="#4a90d9", alpha=0.25, linewidth=0.8,
             label="Episode reward (raw)")
 
-    # Rolling average
     if len(rewards) >= args.window:
         smooth_rewards = rolling_mean(rewards, args.window)
-        # Align x-axis: rolling mean starts at index window-1
         smooth_ts = timesteps[args.window - 1:]
         ax.plot(smooth_ts, smooth_rewards, color="#7ec8e3", linewidth=2.0,
                 label=f"Rolling mean ({args.window} eps)")

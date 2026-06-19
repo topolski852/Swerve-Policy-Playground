@@ -1,18 +1,18 @@
 """
-verify_env.py
-Runs a quick random-policy rollout and checks that the path-following
+verify_env_scoring.py
+Runs a quick random-policy rollout and checks that the fuel scoring
 environment is well-formed. No display required.
 """
 
 import numpy as np
-from path_following.swerve_env import SwerveEnv, OBS_DIM
+from fuel_scoring.swerve_env import SwerveEnv, OBS_DIM
 
 def check(label, cond):
     tag = "PASS" if cond else "FAIL"
     print(f"  [{tag}]  {label}")
     return cond
 
-print("\n--- SwerveEnv (path_following) sanity checks ---")
+print("\n--- SwerveEnv (fuel_scoring) sanity checks ---")
 
 env = SwerveEnv()
 obs, info = env.reset()
@@ -23,11 +23,11 @@ check("obs within declared bounds",
       np.all(obs >= env.observation_space.low) and
       np.all(obs <= env.observation_space.high))
 check("action space shape", env.action_space.shape == (3,))
+check("hopper starts loaded", env._hopper > 0)
 
 rewards = []
-total_steps = 0
-episodes    = 0
-max_eps     = 10
+episodes = 0
+max_eps  = 10
 
 obs, _ = env.reset()
 for _ in range(max_eps):
@@ -36,7 +36,6 @@ for _ in range(max_eps):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         ep_reward += reward
-        total_steps += 1
         if terminated or truncated:
             rewards.append(ep_reward)
             episodes += 1

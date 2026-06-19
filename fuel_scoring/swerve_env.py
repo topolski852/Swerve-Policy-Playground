@@ -1,11 +1,12 @@
 # ──────────────────────────────────────────────────────────────────────────────
-# swerve_env.py
-# Gymnasium environment for swerve path-following (Phase 1: translation only).
+# fuel_scoring/swerve_env.py
+# Gymnasium environment for the fuel scoring experiment.
 #
 # Action space  : Box(3,) — [vx, vy, omega] normalized to [-1, 1]
-#                 omega output is zeroed in Phase 1 (heading locked).
-# Observation   : See _get_obs() for the full vector layout.
-# Reward        : See _compute_reward() — all weights live in constants.py.
+#                 omega zeroed (translation-only phase)
+# Observation   : 10-element vector — see OBS_LABELS
+# Reward        : fuel scoring dominant; navigation secondary
+#                 weights in fuel_scoring/constants.py
 # ──────────────────────────────────────────────────────────────────────────────
 
 import math
@@ -13,38 +14,35 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
-from kinematics import SwerveState
-from field_path import (
+from lib.kinematics import SwerveState
+from lib.field_constants import (
+    MAX_SPEED_MPS,
+    OFF_PATH_LIMIT, FIELD_LENGTH, FIELD_WIDTH,
+    ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
+    BLUE_ALLIANCE_MAX_X, NEUTRAL_MIN_X, NEUTRAL_MAX_X,
+    BLUE_HUB_CENTER,
+)
+from fuel_scoring.field_path import (
     WAYPOINTS, NUM_WAYPOINTS, TOTAL_LENGTH,
     nearest_segment, progress_fraction, waypoint_relative, WaypointTracker,
 )
-from constants import (
-    MAX_SPEED_MPS, MAX_ANGULAR_RPS,
-    MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
-    FIELD_LENGTH, FIELD_WIDTH,
-    ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
-    # Hub / zone / fuel
-    BLUE_HUB_CENTER, RED_HUB_CENTER,
-    BLUE_ALLIANCE_MAX_X, NEUTRAL_MIN_X, NEUTRAL_MAX_X, RED_ALLIANCE_MIN_X,
-    HOPPER_CAPACITY, FUEL_FILL_RATE, FUEL_FILL_MIN_SPEED,
-    FUEL_SHOOT_RATE,
-    # Reward weights
+from fuel_scoring.constants import (
+    MAX_EPISODE_STEPS, SCORING_START_HOPPER,
+    HOPPER_CAPACITY, FUEL_FILL_RATE, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
+    RW_FUEL_SCORED, RW_FUEL_COLLECTED, RW_FULL_HOPPER_IN_NEUTRAL,
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
     RW_WAYPOINT_BONUS, RW_GOAL_BONUS, RW_OFF_PATH_PENALTY, RW_COLLISION_PENALTY,
-    RW_FUEL_SCORED,
 )
 
-# Observation vector indices (document here so swerve_env and render agree)
-# [ vx_n, vy_n,               # 0-1  current robot velocity (normalized)
-#   dx0, dy0,                  # 2-3  next waypoint relative pos (meters, robot frame)
-#   dx1, dy1,                  # 4-5  waypoint+1 relative pos
-#   progress,                  # 6    arc-length progress [0, 1]
-#   cross_track,               # 7    signed cross-track error (meters, clamped)
-#   heading,                   # 8    robot heading (radians)
-#   hopper ]                   # 9    hopper fill level [0, 1]  (Stage 2)
-OBS_DIM = 10
-OBS_LABELS = ["vx_n","vy_n","dx0","dy0","dx1","dy1","progress","cross_track","heading","hopper"]
+OBS_DIM    = 10
+OBS_LABELS = [
+    "vx_n", "vy_n",
+    "dx0", "dy0",
+    "dx1", "dy1",
+    "progress", "cross_track", "heading",
+    "hopper_norm",
+]
 
 
 class SwerveEnv(gym.Env):
@@ -55,12 +53,10 @@ class SwerveEnv(gym.Env):
         super().__init__()
         self.render_mode = render_mode
 
-        # Action: [vx, vy, omega] all in [-1, 1]; scaled by max limits in step()
         self.action_space = spaces.Box(
             low=-1.0, high=1.0, shape=(3,), dtype=np.float32
         )
 
-        # Observation bounds
         obs_low  = np.array([-1, -1,
                               -FIELD_LENGTH, -FIELD_WIDTH,
                               -FIELD_LENGTH, -FIELD_WIDTH,
@@ -77,13 +73,13 @@ class SwerveEnv(gym.Env):
 
         self._robot   = SwerveState()
         self._tracker = WaypointTracker()
+        self._hopper  = SCORING_START_HOPPER
 
-        self._prev_action    = np.zeros(3, dtype=np.float32)
-        self._prev_arc_pos   = 0.0
-        self._step_count     = 0
-        self._hopper         = 0.0
+        self._prev_action  = np.zeros(3, dtype=np.float32)
+        self._prev_arc_pos = 0.0
+        self._step_count   = 0
 
-        self._renderer = None   # created lazily on first render() call
+        self._renderer = None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Gymnasium API
@@ -91,54 +87,53 @@ class SwerveEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
-        sx, sy = WAYPOINTS[0]
+        sx, sy = WAYPOINTS[0]   # start at (3.50, 2.55) — Blue Alliance Zone
         self._robot.reset(x=sx, y=sy, heading=0.0)
         self._tracker.reset()
+        self._hopper       = SCORING_START_HOPPER
         self._prev_action  = np.zeros(3, dtype=np.float32)
-        _, _, _, _, _, arc, _ = nearest_segment(sx, sy)
-        self._prev_arc_pos = arc
+        res = nearest_segment(sx, sy)
+        self._prev_arc_pos = res[5]   # arc_pos at index 5
         self._step_count   = 0
-        self._hopper       = 0.0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1.0, 1.0).astype(np.float32)
 
-        # Scale normalized action to physical units; zero omega in Phase 1
         cmd_vx    = float(action[0]) * MAX_SPEED_MPS
         cmd_vy    = float(action[1]) * MAX_SPEED_MPS
-        cmd_omega = 0.0     # Phase 1: translation-only
+        cmd_omega = 0.0
 
         self._robot.step(cmd_vx, cmd_vy, cmd_omega)
         self._step_count += 1
 
         rx, ry = self._robot.x, self._robot.y
+        speed  = math.hypot(self._robot.vx, self._robot.vy)
 
-        # ── Fuel collection and scoring ───────────────────────────────────────
-        speed = math.hypot(self._robot.vx, self._robot.vy)
-
-        if self._in_neutral_zone() and speed >= FUEL_FILL_MIN_SPEED:
-            self._hopper = min(HOPPER_CAPACITY, self._hopper + FUEL_FILL_RATE)
+        # ── Fuel mechanics ────────────────────────────────────────────────────
+        fuel_collected = 0.0
+        if NEUTRAL_MIN_X < rx < NEUTRAL_MAX_X and speed >= FUEL_FILL_MIN_SPEED:
+            collected = min(HOPPER_CAPACITY - self._hopper, FUEL_FILL_RATE)
+            self._hopper  += collected
+            fuel_collected = collected
 
         fuel_scored = 0.0
-        in_zone, hub = self._in_alliance_zone()
-        if in_zone and self._hopper > 0:
+        if rx < BLUE_ALLIANCE_MAX_X and self._hopper > 0 and speed >= FUEL_FILL_MIN_SPEED:
             shot = min(self._hopper, FUEL_SHOOT_RATE)
             self._hopper -= shot
-            fuel_scored = shot
+            fuel_scored   = shot
 
+        # ── Navigation ────────────────────────────────────────────────────────
         advanced = self._tracker.update(rx, ry)
 
-        # Restrict segment search to near the current tracker position.
-        # Without this, the closed-loop start/end overlap lets the robot latch
-        # onto segment 13→14 (arc_pos ~31 m) from the spawn point, giving a
-        # massive false progress reward that teaches it to run the path backwards.
         hint = max(0, self._tracker.current_idx - 1)
-        seg_idx, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry, hint_seg=hint)
+        result = nearest_segment(rx, ry, hint_seg=hint)
+        seg_idx, _, _, _, dist, arc_pos, cross_sign = result
         cross_track = dist * cross_sign
 
         reward, info = self._compute_reward(
-            seg_idx, arc_pos, cross_track, action, advanced, fuel_scored
+            seg_idx, arc_pos, cross_track, action, advanced,
+            fuel_scored, fuel_collected
         )
 
         terminated = self._tracker.done
@@ -166,8 +161,9 @@ class SwerveEnv(gym.Env):
 
     def render(self):
         if self._renderer is None:
-            from renderer import Renderer
-            self._renderer = Renderer()
+            from lib.renderer import Renderer
+            from fuel_scoring.field_path import WAYPOINTS as _WP
+            self._renderer = Renderer(waypoints=_WP)
         self._renderer.draw(self._robot, self._tracker, self._get_module_states())
 
     def close(self):
@@ -176,43 +172,18 @@ class SwerveEnv(gym.Env):
             self._renderer = None
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Zone helpers
-    # ──────────────────────────────────────────────────────────────────────────
-
-    def _in_neutral_zone(self) -> bool:
-        return NEUTRAL_MIN_X < self._robot.x < NEUTRAL_MAX_X
-
-    def _in_alliance_zone(self):
-        """Returns (True, hub_center_tuple) or (False, None)."""
-        if self._robot.x < BLUE_ALLIANCE_MAX_X:
-            return True, BLUE_HUB_CENTER
-        if self._robot.x > RED_ALLIANCE_MIN_X:
-            return True, RED_HUB_CENTER
-        return False, None
-
-    # ──────────────────────────────────────────────────────────────────────────
     # Collision detection
     # ──────────────────────────────────────────────────────────────────────────
 
     def _check_collision(self) -> bool:
-        """
-        True if the robot overlaps an impassable zone or the field boundary.
-
-        The robot is modelled as a circle with radius ROBOT_BUMPER_HALF.
-        For rectangular obstacles, this is equivalent to checking whether the
-        robot centre falls inside the obstacle expanded by ROBOT_BUMPER_HALF
-        on all sides — a standard swept-circle vs AABB test.
-        """
         rx, ry = self._robot.x, self._robot.y
         r = ROBOT_BUMPER_HALF
 
-        # Field boundary walls
         if rx - r < 0 or rx + r > FIELD_LENGTH:
             return True
         if ry - r < 0 or ry + r > FIELD_WIDTH:
             return True
 
-        # Impassable field structures (hubs and trenches)
         for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
             if rx > ox1 - r and rx < ox2 + r and ry > oy1 - r and ry < oy2 + r:
                 return True
@@ -220,39 +191,28 @@ class SwerveEnv(gym.Env):
         return False
 
     # ──────────────────────────────────────────────────────────────────────────
-    # Reward function  <-- EDIT WEIGHTS IN constants.py
+    # Reward function
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _compute_reward(self, seg_idx, arc_pos, cross_track, action, waypoints_advanced, fuel_scored=0.0):
-        """
-        Dense reward signal for path following.
+    def _compute_reward(self, seg_idx, arc_pos, cross_track, action,
+                        waypoints_advanced, fuel_scored, fuel_collected):
+        # --- Fuel scoring (dominant signal) ---
+        r_fuel_scored    = RW_FUEL_SCORED   * fuel_scored
+        r_fuel_collected = RW_FUEL_COLLECTED * fuel_collected
 
-        Components:
-          progress     : arc-length delta this step — NEGATIVE if going backward,
-                         so the agent is penalised for oscillating/reversing
-          vel_align    : velocity dot-product with path direction, normalised to [-1,1]
-                         this is the primary anti-oscillation term; gives a continuous
-                         gradient even when arc_delta is near zero at segment boundaries
-          cross_track  : penalty proportional to distance from path centreline
-          smooth_vel   : penalty on change in action between steps (jerk)
-          speed_mag    : tiny penalty on action magnitude
-          waypoint     : bonus each time a waypoint is passed
-          goal         : large bonus on path completion
+        # Penalty for sitting in neutral with a full hopper
+        hopper_full_in_neutral = (
+            NEUTRAL_MIN_X < self._robot.x < NEUTRAL_MAX_X and
+            self._hopper >= HOPPER_CAPACITY
+        )
+        r_full_hopper = RW_FULL_HOPPER_IN_NEUTRAL if hopper_full_in_neutral else 0.0
 
-        All weights are in constants.py under "Reward weights".
-        """
-        # --- Progress (arc-length delta, sign preserved) ---
+        # --- Navigation (secondary signals) ---
         arc_delta = arc_pos - self._prev_arc_pos
-        # Suppress sub-millimetre noise but keep genuine backward movement negative
         if abs(arc_delta) < 0.001:
             arc_delta = 0.0
         r_progress = RW_PROGRESS * arc_delta
 
-        # --- Velocity alignment toward current target waypoint ---
-        # Uses the tracker's live target, not the nearest segment.
-        # This means once the robot passes wp1 and the target becomes wp2,
-        # going backward toward wp1 gives NEGATIVE vel_align — closing the
-        # wp1-loop exploit where the agent recycled the waypoint bonus.
         tx, ty = self._tracker.target_waypoint()
         dx_wp  = tx - self._robot.x
         dy_wp  = ty - self._robot.y
@@ -267,34 +227,33 @@ class SwerveEnv(gym.Env):
         vx_w  = self._robot.vx * cos_h - self._robot.vy * sin_h
         vy_w  = self._robot.vx * sin_h + self._robot.vy * cos_h
 
-        vel_align   = (vx_w * pdx + vy_w * pdy) / MAX_SPEED_MPS   # [-1, 1]
+        vel_align   = (vx_w * pdx + vy_w * pdy) / MAX_SPEED_MPS
         r_vel_align = RW_VEL_ALIGN * vel_align
 
-        # --- Other terms ---
         r_cross     = RW_CROSS_TRACK   * abs(cross_track)
         r_smooth    = RW_SMOOTH_VEL    * float(np.linalg.norm(action - self._prev_action))
         r_speed_mag = RW_SPEED_MAGNITUDE * float(np.linalg.norm(action))
-        r_time      = RW_TIME_PENALTY  # flat per-step cost — punishes loitering
+        r_time      = RW_TIME_PENALTY
         r_waypoint  = RW_WAYPOINT_BONUS * waypoints_advanced
         r_goal      = RW_GOAL_BONUS if self._tracker.done else 0.0
-        r_fuel      = RW_FUEL_SCORED * fuel_scored
 
-        reward = (r_progress + r_vel_align + r_cross +
-                  r_smooth + r_speed_mag + r_time + r_waypoint + r_goal + r_fuel)
+        reward = (r_fuel_scored + r_fuel_collected + r_full_hopper +
+                  r_progress + r_vel_align + r_cross +
+                  r_smooth + r_speed_mag + r_time + r_waypoint + r_goal)
 
         info = {
-            "r_progress":   r_progress,
-            "r_vel_align":  r_vel_align,
-            "r_cross":      r_cross,
-            "r_smooth":     r_smooth,
-            "r_time":       r_time,
-            "r_waypoint":   r_waypoint,
-            "r_goal":       r_goal,
-            "r_fuel":       r_fuel,
-            "arc_pos":      arc_pos,
-            "cross_track":  cross_track,
-            "hopper_level": self._hopper / HOPPER_CAPACITY,
-            "fuel_scored":  fuel_scored,
+            "r_fuel_scored":    r_fuel_scored,
+            "r_fuel_collected": r_fuel_collected,
+            "r_progress":       r_progress,
+            "r_vel_align":      r_vel_align,
+            "r_cross":          r_cross,
+            "r_smooth":         r_smooth,
+            "r_waypoint":       r_waypoint,
+            "r_goal":           r_goal,
+            "arc_pos":          arc_pos,
+            "hopper_level":     self._hopper / HOPPER_CAPACITY,
+            "fuel_scored":      fuel_scored,
+            "fuel_collected":   fuel_collected,
         }
         return reward, info
 
@@ -305,21 +264,20 @@ class SwerveEnv(gym.Env):
     def _get_obs(self):
         rx, ry, heading = self._robot.x, self._robot.y, self._robot.heading
 
-        # Current velocity normalized to [-1, 1]
         vx_n = self._robot.vx / MAX_SPEED_MPS
         vy_n = self._robot.vy / MAX_SPEED_MPS
 
-        # Next two waypoints in robot local frame
         t0 = min(self._tracker.current_idx, NUM_WAYPOINTS - 1)
         t1 = min(t0 + 1, NUM_WAYPOINTS - 1)
         dx0, dy0 = waypoint_relative(rx, ry, heading, t0)
         dx1, dy1 = waypoint_relative(rx, ry, heading, t1)
 
-        # Arc-length progress and cross-track error
-        _, _, _, _, dist, arc_pos, cross_sign = nearest_segment(rx, ry)
-        prog = progress_fraction(arc_pos)
-        cross = dist * cross_sign
-        cross = float(np.clip(cross, -OFF_PATH_LIMIT, OFF_PATH_LIMIT))
+        result = nearest_segment(rx, ry)
+        _, _, _, _, dist, arc_pos, cross_sign = result
+        prog  = progress_fraction(arc_pos)
+        cross = float(np.clip(dist * cross_sign, -OFF_PATH_LIMIT, OFF_PATH_LIMIT))
+
+        hopper_norm = float(np.clip(self._hopper / HOPPER_CAPACITY, 0.0, 1.0))
 
         return np.array([
             vx_n, vy_n,
@@ -328,9 +286,8 @@ class SwerveEnv(gym.Env):
             prog,
             cross,
             heading,
-            self._hopper / HOPPER_CAPACITY,
+            hopper_norm,
         ], dtype=np.float32)
 
     def _get_module_states(self):
-        """Returns current module (angle, speed) list for the renderer."""
         return self._robot.module_states
