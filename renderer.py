@@ -9,9 +9,9 @@ import math
 import pygame
 from field_path import WAYPOINTS
 from constants import (
-    FIELD_WIDTH, FIELD_HEIGHT,
-    RENDER_SCALE, WINDOW_PADDING,
-    ROBOT_HALF_WIDTH_X, ROBOT_HALF_WIDTH_Y, MODULE_OFFSETS,
+    FIELD_LENGTH, FIELD_WIDTH,
+    RENDER_SCALE, WINDOW_PADDING, FIELD_IMAGE,
+    ROBOT_BUMPER_HALF, MODULE_OFFSETS,
     ROBOT_COLOR, ROBOT_BORDER_COLOR, MODULE_COLOR,
     PATH_COLOR, WAYPOINT_COLOR, ROBOT_HEADING_COLOR,
     ARROW_MAX_PIXELS, ARROW_COLOR, ARROW_WIDTH, ARROW_HEAD_SIZE,
@@ -36,16 +36,21 @@ class Renderer:
 
         self._scale = RENDER_SCALE
         self._pad   = WINDOW_PADDING
-        self._fw    = FIELD_WIDTH
-        self._fh    = FIELD_HEIGHT
+        self._fw    = FIELD_LENGTH
+        self._fh    = FIELD_WIDTH
 
-        w = int(FIELD_WIDTH  * RENDER_SCALE) + 2 * WINDOW_PADDING
-        h = int(FIELD_HEIGHT * RENDER_SCALE) + 2 * WINDOW_PADDING
+        field_px_w = int(FIELD_LENGTH * RENDER_SCALE)
+        field_px_h = int(FIELD_WIDTH  * RENDER_SCALE)
+        w = field_px_w + 2 * WINDOW_PADDING
+        h = field_px_h + 2 * WINDOW_PADDING
 
         self.screen = pygame.display.set_mode((w, h))
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock  = pygame.time.Clock()
         self._font  = pygame.font.SysFont("consolas", 13)
+
+        field_img_raw  = pygame.image.load(FIELD_IMAGE).convert()
+        self._field_img = pygame.transform.smoothscale(field_img_raw, (field_px_w, field_px_h))
 
         self._video_writer = None
         if record_path is not None:
@@ -115,13 +120,7 @@ class Renderer:
         self._window_alive = v
 
     def _draw_field_border(self):
-        rect = pygame.Rect(
-            self._pad, self._pad,
-            int(self._fw * self._scale),
-            int(self._fh * self._scale)
-        )
-        pygame.draw.rect(self.screen, (55, 55, 55), rect)
-        pygame.draw.rect(self.screen, (90, 90, 90), rect, 2)
+        self.screen.blit(self._field_img, (self._pad, self._pad))
 
     def _draw_path(self, active_wp_idx: int):
         pts = [self._fs(wx, wy) for wx, wy in WAYPOINTS]
@@ -149,16 +148,15 @@ class Renderer:
         cos_h    = math.cos(heading)
         sin_h    = math.sin(heading)
 
-        # ── Chassis body ──────────────────────────────────────────────────────
-        hw_x = ROBOT_HALF_WIDTH_X * self._scale
-        hw_y = ROBOT_HALF_WIDTH_Y * self._scale
+        # ── Chassis body (bumper outline) ─────────────────────────────────────
+        bh = ROBOT_BUMPER_HALF
 
-        # Four corners in robot frame, rotated to world, then to screen
+        # Four bumper corners in robot frame, rotated to world, then to screen
         corners_robot = [
-            ( ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),
-            ( ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),
-            (-ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),
-            (-ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),
+            ( bh,  bh),
+            ( bh, -bh),
+            (-bh, -bh),
+            (-bh,  bh),
         ]
         corners_screen = []
         for (cx, cy) in corners_robot:

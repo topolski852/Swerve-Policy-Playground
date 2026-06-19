@@ -19,21 +19,44 @@ from constants import WAYPOINT_PASS_RADIUS
 # Edit these to reshape the path; all downstream code uses WAYPOINTS.
 
 WAYPOINTS = [
-    ( 1.5,  1.5),    # 0  start (bottom-left zone)
-    ( 4.0,  1.5),    # 1  long straight — mid-field bottom
-    ( 7.0,  1.5),    # 2
-    (10.0,  1.5),    # 3  approaching far end
-    (12.5,  2.0),    # 4  beginning of far-end curve
-    (14.5,  3.5),    # 5  sweeping right turn (tight)
-    (14.8,  5.5),    # 6  top of tight turn
-    (13.5,  7.0),    # 7  exit of tight turn, heading left
-    (10.5,  7.2),    # 8  long return along top
-    ( 7.5,  7.0),    # 9
-    ( 5.5,  6.0),    # 10 S-curve entry (drop toward center)
-    ( 4.5,  4.5),    # 11 S-curve mid
-    ( 3.5,  3.0),    # 12 S-curve exit
-    ( 2.0,  2.5),    # 13 closing approach
-    ( 1.5,  1.5),    # 14 back to start (closed loop)
+    # ── Midfield crossing ─────────────────────────────────
+    ( 8.27, 4.10),   # 0  start/end — midfield crossing
+
+    # ── Approach Blue BumpLeft ────────────────────────────
+    ( 6.50, 5.60),   # 1  neutral zone, aligned to BumpLeft corridor
+    ( 5.40, 5.60),   # 2  BUMP_NEUTRAL  — Blue BumpLeft entry  (from Nodes.java)
+    ( 3.70, 5.60),   # 3  BUMP_ALLIANCE — Blue BumpLeft exit   (from Nodes.java)
+
+    # ── Blue alliance zone: loop left around blue hub ─────
+    ( 2.80, 5.20),   # 4  above-left of blue hub
+    ( 2.00, 4.10),   # 5  left of blue hub center
+    ( 2.80, 3.00),   # 6  below-left of blue hub
+
+    # ── Cross Blue BumpRight back to neutral ──────────────
+    ( 3.70, 2.61),   # 7  BUMP_ALLIANCE — Blue BumpRight entry (Y-flip of BumpLeft)
+    ( 5.40, 2.61),   # 8  BUMP_NEUTRAL  — Blue BumpRight exit
+    ( 6.50, 2.60),   # 9  neutral zone exit
+
+    # ── Midfield crossing (second pass) ───────────────────
+    ( 8.27, 4.10),   # 10 midfield crossing
+
+    # ── Approach Red BumpRight ────────────────────────────
+    ( 9.80, 2.60),   # 11 neutral zone, aligned to Red BumpRight corridor
+    (11.14, 2.61),   # 12 BUMP_NEUTRAL  — Red BumpRight entry  (X-flip of Blue)
+    (12.84, 2.61),   # 13 BUMP_ALLIANCE — Red BumpRight exit
+
+    # ── Red alliance zone: loop right around red hub ──────
+    (13.70, 3.00),   # 14 below-right of red hub
+    (14.50, 4.10),   # 15 right of red hub center
+    (13.70, 5.20),   # 16 above-right of red hub
+
+    # ── Cross Red BumpLeft back to neutral ────────────────
+    (12.84, 5.60),   # 17 BUMP_ALLIANCE — Red BumpLeft entry
+    (11.14, 5.60),   # 18 BUMP_NEUTRAL  — Red BumpLeft exit
+    ( 9.80, 5.60),   # 19 neutral zone return
+
+    # ── Back to start ─────────────────────────────────────
+    ( 8.27, 4.10),   # 20 closed loop
 ]
 
 

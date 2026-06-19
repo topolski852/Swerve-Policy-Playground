@@ -21,7 +21,7 @@ from field_path import (
 from constants import (
     MAX_SPEED_MPS, MAX_ANGULAR_RPS,
     MAX_EPISODE_STEPS, OFF_PATH_LIMIT,
-    FIELD_WIDTH, FIELD_HEIGHT,
+    FIELD_LENGTH, FIELD_WIDTH,
     # Reward weights
     RW_PROGRESS, RW_VEL_ALIGN, RW_CROSS_TRACK, RW_SMOOTH_VEL,
     RW_SPEED_MAGNITUDE, RW_TIME_PENALTY,
@@ -54,13 +54,13 @@ class SwerveEnv(gym.Env):
 
         # Observation bounds
         obs_low  = np.array([-1, -1,
-                              -FIELD_WIDTH, -FIELD_HEIGHT,
-                              -FIELD_WIDTH, -FIELD_HEIGHT,
+                              -FIELD_LENGTH, -FIELD_WIDTH,
+                              -FIELD_LENGTH, -FIELD_WIDTH,
                                0.0, -OFF_PATH_LIMIT,
                               -math.pi], dtype=np.float32)
         obs_high = np.array([ 1,  1,
-                               FIELD_WIDTH,  FIELD_HEIGHT,
-                               FIELD_WIDTH,  FIELD_HEIGHT,
+                               FIELD_LENGTH,  FIELD_WIDTH,
+                               FIELD_LENGTH,  FIELD_WIDTH,
                                1.0,  OFF_PATH_LIMIT,
                                math.pi], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)

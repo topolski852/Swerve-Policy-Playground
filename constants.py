@@ -7,18 +7,17 @@ import math
 
 # ── Robot geometry ─────────────────────────────────────────────────────────────
 
-# Half-widths of the robot chassis (meters).
-# 1507 frame is roughly 0.62 m × 0.62 m (bumpers excluded).
-ROBOT_HALF_WIDTH_X = 0.31   # front-back half-length
-ROBOT_HALF_WIDTH_Y = 0.31   # left-right half-width
+# Physical dimensions from Nodes.java (1507 robot, 2026 season).
+ROBOT_BUMPER_HALF = 27 / 2 * 0.0254      # 0.34290 m — outer bumper half-width, used for chassis rendering
+MODULE_OFFSET     = 10.7375 * 0.0254     # 0.27273 m — module position from robot center
 
 # Module offsets from robot center (meters), WPILib order: FL, FR, BL, BR.
 # Each entry is (x_offset, y_offset) in robot frame (x=forward, y=left).
 MODULE_OFFSETS = [
-    ( ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),   # FL
-    ( ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),   # FR
-    (-ROBOT_HALF_WIDTH_X,  ROBOT_HALF_WIDTH_Y),   # BL
-    (-ROBOT_HALF_WIDTH_X, -ROBOT_HALF_WIDTH_Y),   # BR
+    ( MODULE_OFFSET,  MODULE_OFFSET),   # FL
+    ( MODULE_OFFSET, -MODULE_OFFSET),   # FR
+    (-MODULE_OFFSET,  MODULE_OFFSET),   # BL
+    (-MODULE_OFFSET, -MODULE_OFFSET),   # BR
 ]
 
 # ── Drive limits ───────────────────────────────────────────────────────────────
@@ -40,9 +39,10 @@ DT = 0.02   # simulation timestep (seconds) — matches WPILib 20 ms loop
 
 # ── Field dimensions ───────────────────────────────────────────────────────────
 
-# FRC field: 16.54 m × 8.21 m
-FIELD_WIDTH  = 16.54   # meters, x-axis
-FIELD_HEIGHT =  8.21   # meters, y-axis
+# FRC 2026 Rebuilt field. LENGTH = long axis (X), WIDTH = short axis (Y).
+# "Height" is avoided — the field is 2D and height would imply a Z dimension.
+FIELD_LENGTH =  16.54   # meters, x-axis (Blue DS → Red DS)
+FIELD_WIDTH  =   8.21   # meters, y-axis (right wall → left wall from Blue DS)
 
 # ── Environment / training ─────────────────────────────────────────────────────
 
@@ -66,6 +66,8 @@ RW_GOAL_BONUS        = 20.0    # bonus on successful path completion
 RW_OFF_PATH_PENALTY  = -10.0   # one-time penalty on off-path termination
 
 # ── Renderer ───────────────────────────────────────────────────────────────────
+
+FIELD_IMAGE          = "assets/field_2026.png"
 
 RENDER_SCALE         = 60.0    # pixels per meter
 WINDOW_PADDING       = 40      # pixels of border around the field
