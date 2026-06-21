@@ -42,9 +42,9 @@ class WaypointTracker:
         self._waypoints  = []
         self.current_idx = 0   # named current_idx for renderer compatibility
 
-    def reset(self, waypoints):
+    def reset(self, waypoints, start_idx=0):
         self._waypoints  = list(waypoints)
-        self.current_idx = 0
+        self.current_idx = start_idx
 
     @property
     def done(self):
@@ -106,8 +106,11 @@ class SwerveEnv(gym.Env):
         self._robot.reset(x=sx, y=sy, heading=0.0)
 
         n = int(self.np_random.integers(N_WAYPOINTS_MIN, N_WAYPOINTS_MAX + 1))
-        self._waypoints = [self._random_valid_pos() for _ in range(n)]
-        self._tracker.reset(self._waypoints)
+        nav_wps = [self._random_valid_pos() for _ in range(n)]
+        # Prepend start as wp0 so the path overlay connects from the spawn point.
+        # Tracker starts at index 1 — robot is already at wp0.
+        self._waypoints = [(sx, sy)] + nav_wps
+        self._tracker.reset(self._waypoints, start_idx=1)
 
         self._step_count = 0
         self._prev_dist  = math.hypot(

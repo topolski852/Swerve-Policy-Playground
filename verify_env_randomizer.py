@@ -22,8 +22,9 @@ check("obs within declared bounds",
       np.all(obs >= env.observation_space.low) and
       np.all(obs <= env.observation_space.high))
 check("action space shape",     env.action_space.shape == (3,))
-check("waypoints generated",    len(env._waypoints) >= 3)
-check("start not in waypoint",  (env._robot.x, env._robot.y) not in env._waypoints)
+check("waypoints generated",         len(env._waypoints) >= 4)   # N nav wps + 1 start
+check("start is waypoint 0",         env._waypoints[0] == (env._robot.x, env._robot.y))
+check("tracker begins at index 1",   env._tracker.current_idx == 1)
 
 rewards   = []
 completed = 0
