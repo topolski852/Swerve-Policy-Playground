@@ -13,9 +13,9 @@ MAX_WAYPOINT_DISTANCE = 5.0  # metres — max distance between consecutive waypo
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
 
-# Progress: reward getting closer, 0 for moving away (never negative).
-# Detours around obstacles cost time but not extra penalty.
-RW_PROGRESS          =  1.5    # per metre closed toward current waypoint per step
+# Per-step proximity reward: linear from 0 (at MAX_WAYPOINT_DISTANCE) to
+# RW_PROXIMITY (at the waypoint). No direction tracking — just how close you are.
+RW_PROXIMITY         =  0.1    # per step at the waypoint; 0 at MAX_WAYPOINT_DISTANCE
 RW_WAYPOINT_BONUS    = 20.0   # one-time bonus each time a waypoint is reached
 RW_GOAL_BONUS        = 75.0   # bonus for completing all waypoints in the episode
 RW_TIME_PENALTY      = -0.01  # per step — keeps the robot moving

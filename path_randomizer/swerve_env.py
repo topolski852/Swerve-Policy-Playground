@@ -25,7 +25,7 @@ from lib.field_constants import (
 )
 from path_randomizer.constants import (
     N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS, MAX_WAYPOINT_DISTANCE,
-    RW_PROGRESS, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
+    RW_PROXIMITY, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
 )
 
@@ -92,7 +92,6 @@ class SwerveEnv(gym.Env):
         self._tracker    = WaypointTracker()
         self._waypoints  = []
         self._step_count = 0
-        self._prev_dist  = 0.0
         self._renderer   = None
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -121,10 +120,6 @@ class SwerveEnv(gym.Env):
         self._tracker.reset(self._waypoints, start_idx=1)
 
         self._step_count = 0
-        self._prev_dist  = math.hypot(
-            sx - self._tracker.current[0],
-            sy - self._tracker.current[1],
-        )
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -138,27 +133,23 @@ class SwerveEnv(gym.Env):
 
         rx, ry = self._robot.x, self._robot.y
 
-        # ── Waypoint progress ─────────────────────────────────────────────────
-        progress      = 0.0
-        waypoint_bonus = 0.0
+        # ── Waypoint proximity + arrival ──────────────────────────────────────
+        proximity_reward = 0.0
+        waypoint_bonus   = 0.0
         if not self._tracker.done:
-            wx, wy   = self._tracker.current
-            dist     = math.hypot(rx - wx, ry - wy)
-            progress = max(0.0, self._prev_dist - dist)  # reward closing only; 0 for moving away
-            advanced = self._tracker.update(rx, ry)
-            waypoint_bonus = RW_WAYPOINT_BONUS * advanced
+            wx, wy = self._tracker.current
+            dist   = math.hypot(rx - wx, ry - wy)
+            # Linear: 0 at MAX_WAYPOINT_DISTANCE, RW_PROXIMITY at waypoint.
+            proximity_reward = RW_PROXIMITY * max(0.0, 1.0 - dist / MAX_WAYPOINT_DISTANCE)
 
-            if not self._tracker.done:
-                nwx, nwy     = self._tracker.current
-                self._prev_dist = math.hypot(rx - nwx, ry - nwy)
-            else:
-                self._prev_dist = 0.0
+            advanced       = self._tracker.update(rx, ry)
+            waypoint_bonus = RW_WAYPOINT_BONUS * advanced
 
         goal_done = self._tracker.done
 
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
-            RW_PROGRESS * progress
+            proximity_reward
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
@@ -176,7 +167,6 @@ class SwerveEnv(gym.Env):
         info = {
             "waypoint_idx": self._tracker.current_idx,
             "n_waypoints":  len(self._waypoints),
-            "progress":     progress,
         }
 
         if self.render_mode == "human":
