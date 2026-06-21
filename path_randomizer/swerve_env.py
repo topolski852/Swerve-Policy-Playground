@@ -24,7 +24,7 @@ from lib.field_constants import (
     WAYPOINT_PASS_RADIUS,
 )
 from path_randomizer.constants import (
-    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS,
+    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS, MAX_WAYPOINT_DISTANCE,
     RW_PROGRESS, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
 )
@@ -106,7 +106,15 @@ class SwerveEnv(gym.Env):
         self._robot.reset(x=sx, y=sy, heading=0.0)
 
         n = int(self.np_random.integers(N_WAYPOINTS_MIN, N_WAYPOINTS_MAX + 1))
-        nav_wps = [self._random_valid_pos() for _ in range(n)]
+        # Chain each waypoint within MAX_WAYPOINT_DISTANCE of the previous so
+        # the agent never has to cross the full field in one hop.
+        nav_wps = []
+        prev_x, prev_y = sx, sy
+        for _ in range(n):
+            wx, wy = self._random_pos_near(prev_x, prev_y, MAX_WAYPOINT_DISTANCE)
+            nav_wps.append((wx, wy))
+            prev_x, prev_y = wx, wy
+
         # Prepend start as wp0 so the path overlay connects from the spawn point.
         # Tracker starts at index 1 — robot is already at wp0.
         self._waypoints = [(sx, sy)] + nav_wps
@@ -136,7 +144,7 @@ class SwerveEnv(gym.Env):
         if not self._tracker.done:
             wx, wy   = self._tracker.current
             dist     = math.hypot(rx - wx, ry - wy)
-            progress = self._prev_dist - dist          # positive = getting closer
+            progress = max(0.0, self._prev_dist - dist)  # reward closing only; 0 for moving away
             advanced = self._tracker.update(rx, ry)
             waypoint_bonus = RW_WAYPOINT_BONUS * advanced
 
@@ -218,14 +226,30 @@ class SwerveEnv(gym.Env):
         for _ in range(200):
             x = float(self.np_random.uniform(pad, FIELD_LENGTH - pad))
             y = float(self.np_random.uniform(pad, FIELD_WIDTH  - pad))
-            ok = True
-            for ox1, oy1, ox2, oy2 in IMPASSABLE_RECTS:
-                if x > ox1 - r and x < ox2 + r and y > oy1 - r and y < oy2 + r:
-                    ok = False
-                    break
-            if ok:
+            if self._pos_valid(x, y, r):
                 return x, y
         return FIELD_LENGTH / 2, FIELD_WIDTH / 2  # fallback: midfield
+
+    def _random_pos_near(self, cx, cy, max_dist):
+        """Random valid position within max_dist metres of (cx, cy)."""
+        r = ROBOT_BUMPER_HALF
+        pad = r + 0.1
+        for _ in range(200):
+            angle = float(self.np_random.uniform(0.0, 2.0 * math.pi))
+            dist  = float(self.np_random.uniform(0.0, max_dist))
+            x = cx + dist * math.cos(angle)
+            y = cy + dist * math.sin(angle)
+            if x < pad or x > FIELD_LENGTH - pad: continue
+            if y < pad or y > FIELD_WIDTH  - pad: continue
+            if self._pos_valid(x, y, r):
+                return x, y
+        return self._random_valid_pos()  # fallback: unconstrained random
+
+    def _pos_valid(self, x, y, r):
+        for ox1, oy1, ox2, oy2 in IMPASSABLE_RECTS:
+            if x > ox1 - r and x < ox2 + r and y > oy1 - r and y < oy2 + r:
+                return False
+        return True
 
     def _check_collision(self):
         rx, ry = self._robot.x, self._robot.y
