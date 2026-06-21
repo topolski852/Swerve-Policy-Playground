@@ -3,8 +3,9 @@
 # SAC training script for goal-conditioned waypoint navigation.
 #
 # Usage:
-#   python train_randomizer.py                       # train silently
-#   python train_randomizer.py --render-eval          # pop a window every 20k steps
+#   python train_randomizer.py                          # single env, silent
+#   python train_randomizer.py --n-envs 2               # 2 parallel envs (PC)
+#   python train_randomizer.py --render-eval             # pop a window every 20k steps
 #   python train_randomizer.py --render-eval --eval-freq 10000
 #   python train_randomizer.py --resume path_randomizer/checkpoints/randomizer_100000_steps.zip
 #
@@ -21,6 +22,8 @@ from datetime import datetime
 
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from path_randomizer.swerve_env import SwerveEnv
 
@@ -189,29 +192,33 @@ class RecordEvalCallback(BaseCallback):
 # ── Reward logger callback ─────────────────────────────────────────────────────
 
 class RewardLogger(BaseCallback):
-    """Writes (timestep, episode_reward) rows to a CSV file."""
+    """Writes (timestep, episode_reward) rows to a CSV file.
+    Works with both single env and SubprocVecEnv (tracks each env separately)."""
 
     def __init__(self, log_path: str):
         super().__init__()
-        self._path      = log_path
-        self._ep_reward = 0.0
-        self._f         = None
-        self._writer    = None
+        self._path       = log_path
+        self._ep_rewards = None   # list of floats, one per env — set on training start
+        self._f          = None
+        self._writer     = None
 
     def _on_training_start(self):
+        n = self.training_env.num_envs
+        self._ep_rewards = [0.0] * n
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         self._f      = open(self._path, "w", newline="")
         self._writer = csv.writer(self._f)
         self._writer.writerow(["timestep", "episode_reward"])
 
     def _on_step(self) -> bool:
-        reward = self.locals.get("rewards", [0])[0]
-        done   = self.locals.get("dones",   [False])[0]
-        self._ep_reward += reward
-        if done:
-            self._writer.writerow([self.num_timesteps, round(self._ep_reward, 4)])
-            self._f.flush()
-            self._ep_reward = 0.0
+        rewards = self.locals.get("rewards", [0])
+        dones   = self.locals.get("dones",   [False])
+        for i, (r, done) in enumerate(zip(rewards, dones)):
+            self._ep_rewards[i] += r
+            if done:
+                self._writer.writerow([self.num_timesteps, round(self._ep_rewards[i], 4)])
+                self._f.flush()
+                self._ep_rewards[i] = 0.0
         return True
 
     def _on_training_end(self):
@@ -225,6 +232,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume",         type=str,  default=None)
     parser.add_argument("--steps",          type=int,  default=TOTAL_TIMESTEPS)
+    parser.add_argument("--n-envs",         type=int,  default=1,
+                        help="parallel envs via SubprocVecEnv (default 1 = no subprocess)")
     parser.add_argument("--render-eval",    action="store_true")
     parser.add_argument("--eval-freq",      type=int,  default=EVAL_FREQ_DEFAULT)
     parser.add_argument("--render-capture", action="store_true")
@@ -237,10 +246,14 @@ def main():
     reward_csv = os.path.join(LOG_DIR, f"rewards_{timestamp}.csv")
     print(f"Logging rewards to: {reward_csv}")
 
-    env = SwerveEnv()
+    if args.n_envs > 1:
+        env = make_vec_env(SwerveEnv, n_envs=args.n_envs, vec_env_cls=SubprocVecEnv)
+        print(f"Using {args.n_envs} parallel envs (SubprocVecEnv).")
+    else:
+        env = SwerveEnv()
 
     checkpoint_cb = CheckpointCallback(
-        save_freq   = CHECKPOINT_FREQ,
+        save_freq   = max(1, CHECKPOINT_FREQ // max(args.n_envs, 1)),
         save_path   = CHECKPOINT_DIR,
         name_prefix = "randomizer",
         verbose     = 1,
@@ -268,6 +281,7 @@ def main():
 
     print(f"\nStarting randomized-waypoint training for {args.steps:,} timesteps.")
     print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
+    print(f"Envs: {args.n_envs}  |  device: {SAC_KWARGS['device']}")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
 
     try:
