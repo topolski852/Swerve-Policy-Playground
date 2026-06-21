@@ -31,8 +31,8 @@ from path_randomizer.constants import (
 
 FIELD_DIAGONAL = math.sqrt(FIELD_LENGTH ** 2 + FIELD_WIDTH ** 2)
 
-OBS_DIM    = 6
-OBS_LABELS = ["vx_n", "vy_n", "dx0_n", "dy0_n", "dx1_n", "dy1_n"]
+OBS_DIM    = 8
+OBS_LABELS = ["vx_n", "vy_n", "rx_n", "ry_n", "dx0_n", "dy0_n", "dx1_n", "dy1_n"]
 
 
 class WaypointTracker:
@@ -84,8 +84,8 @@ class SwerveEnv(gym.Env):
             low=-1.0, high=1.0, shape=(3,), dtype=np.float32
         )
 
-        obs_low  = np.full(OBS_DIM, -1.0, dtype=np.float32)
-        obs_high = np.full(OBS_DIM,  1.0, dtype=np.float32)
+        obs_low  = np.array([-1., -1.,  0.,  0., -1., -1., -1., -1.], dtype=np.float32)
+        obs_high = np.array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
         self._robot      = SwerveState()
@@ -196,6 +196,8 @@ class SwerveEnv(gym.Env):
         vx_n = float(np.clip(self._robot.vx / MAX_SPEED_MPS, -1.0, 1.0))
         vy_n = float(np.clip(self._robot.vy / MAX_SPEED_MPS, -1.0, 1.0))
         rx, ry = self._robot.x, self._robot.y
+        rx_n = float(np.clip(rx / FIELD_LENGTH, 0.0, 1.0))
+        ry_n = float(np.clip(ry / FIELD_WIDTH,  0.0, 1.0))
 
         if self._tracker.done:
             dx0_n = dy0_n = dx1_n = dy1_n = 0.0
@@ -207,7 +209,8 @@ class SwerveEnv(gym.Env):
             dx1_n = float(np.clip((wx1 - rx) / FIELD_DIAGONAL, -1.0, 1.0))
             dy1_n = float(np.clip((wy1 - ry) / FIELD_DIAGONAL, -1.0, 1.0))
 
-        return np.array([vx_n, vy_n, dx0_n, dy0_n, dx1_n, dy1_n], dtype=np.float32)
+        return np.array([vx_n, vy_n, rx_n, ry_n, dx0_n, dy0_n, dx1_n, dy1_n],
+                        dtype=np.float32)
 
     def _random_valid_pos(self):
         r = ROBOT_BUMPER_HALF

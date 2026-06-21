@@ -16,7 +16,7 @@ print("\n--- SwerveEnv (path_randomizer) sanity checks ---")
 env = SwerveEnv()
 obs, _ = env.reset()
 
-check(f"obs shape is correct (expected {OBS_DIM})", obs.shape == (OBS_DIM,))
+check(f"obs shape is correct (expected {OBS_DIM})",  obs.shape == (OBS_DIM,))
 check("obs dtype is float32",   obs.dtype == np.float32)
 check("obs within declared bounds",
       np.all(obs >= env.observation_space.low) and
