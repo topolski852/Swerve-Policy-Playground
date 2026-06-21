@@ -25,7 +25,8 @@ from lib.field_constants import (
 )
 from path_randomizer.constants import (
     N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS, MAX_WAYPOINT_DISTANCE,
-    RW_PROXIMITY, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
+    MILESTONE_FRACTIONS, MILESTONE_BONUSES,
+    RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
 )
 
@@ -88,11 +89,12 @@ class SwerveEnv(gym.Env):
         obs_high = np.array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
-        self._robot      = SwerveState()
-        self._tracker    = WaypointTracker()
-        self._waypoints  = []
-        self._step_count = 0
-        self._renderer   = None
+        self._robot             = SwerveState()
+        self._tracker           = WaypointTracker()
+        self._waypoints         = []
+        self._step_count        = 0
+        self._milestones_earned = set()   # indices into MILESTONE_FRACTIONS earned for current wp
+        self._renderer          = None
 
     # ──────────────────────────────────────────────────────────────────────────
     # Gymnasium API
@@ -119,7 +121,8 @@ class SwerveEnv(gym.Env):
         self._waypoints = [(sx, sy)] + nav_wps
         self._tracker.reset(self._waypoints, start_idx=1)
 
-        self._step_count = 0
+        self._step_count        = 0
+        self._milestones_earned = set()
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -133,23 +136,30 @@ class SwerveEnv(gym.Env):
 
         rx, ry = self._robot.x, self._robot.y
 
-        # ── Waypoint proximity + arrival ──────────────────────────────────────
-        proximity_reward = 0.0
+        # ── Milestone rings + arrival ─────────────────────────────────────────
+        milestone_reward = 0.0
         waypoint_bonus   = 0.0
         if not self._tracker.done:
             wx, wy = self._tracker.current
             dist   = math.hypot(rx - wx, ry - wy)
-            # Linear: 0 at MAX_WAYPOINT_DISTANCE, RW_PROXIMITY at waypoint.
-            proximity_reward = RW_PROXIMITY * max(0.0, 1.0 - dist / MAX_WAYPOINT_DISTANCE)
 
-            advanced       = self._tracker.update(rx, ry)
-            waypoint_bonus = RW_WAYPOINT_BONUS * advanced
+            # One-time bonuses at 75%/50%/25% of MAX_WAYPOINT_DISTANCE.
+            # Each index can only fire once per waypoint; backing off can't re-earn it.
+            for i, (frac, bonus) in enumerate(zip(MILESTONE_FRACTIONS, MILESTONE_BONUSES)):
+                if i not in self._milestones_earned and dist < frac * MAX_WAYPOINT_DISTANCE:
+                    self._milestones_earned.add(i)
+                    milestone_reward += bonus
+
+            advanced = self._tracker.update(rx, ry)
+            if advanced:
+                waypoint_bonus          = RW_WAYPOINT_BONUS * advanced
+                self._milestones_earned = set()   # reset rings for next waypoint
 
         goal_done = self._tracker.done
 
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
-            proximity_reward
+            milestone_reward
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
