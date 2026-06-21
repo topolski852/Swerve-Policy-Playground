@@ -49,7 +49,7 @@ class Renderer:
         self.screen = pygame.display.set_mode((w, h))
         pygame.display.set_caption(WINDOW_TITLE)
         self.clock  = pygame.time.Clock()
-        self._font  = pygame.font.SysFont("consolas", 13)
+        self._font  = pygame.font.SysFont("consolas", 15)
 
         self._field_img = pygame.transform.smoothscale(field_img_raw.convert(), (disp_w, disp_h))
 
@@ -228,12 +228,20 @@ class Renderer:
                 pygame.draw.polygon(self.screen, ARROW_COLOR, [tip, left, right])
 
     def _draw_hud(self, info: dict):
+        x = self._pad + 4
         y = self._pad + 4
+        line_h = 19
+        lines = []
         for key, val in info.items():
-            if isinstance(val, float):
-                text = f"{key}: {val:+.3f}"
-            else:
-                text = f"{key}: {val}"
-            surf = self._font.render(text, True, (200, 200, 200))
-            self.screen.blit(surf, (self._pad + 4, y))
-            y += 16
+            lines.append(f"{key}: {val:+.2f}" if isinstance(val, float) else f"{key}: {val}")
+        if not lines:
+            return
+        max_w = max(self._font.size(l)[0] for l in lines)
+        pad = 4
+        bg = pygame.Surface((max_w + pad * 2, line_h * len(lines) + pad * 2), pygame.SRCALPHA)
+        bg.fill((0, 0, 0, 180))
+        self.screen.blit(bg, (x - pad, y - pad))
+        for line in lines:
+            surf = self._font.render(line, True, (255, 255, 255))
+            self.screen.blit(surf, (x, y))
+            y += line_h

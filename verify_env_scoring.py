@@ -50,8 +50,16 @@ check("obs always within bounds during rollout",
 if rewards:
     print(f"\n  Random-policy episode rewards over {episodes} eps:")
     print(f"    mean={np.mean(rewards):.2f}  min={np.min(rewards):.2f}  max={np.max(rewards):.2f}")
-    check("some positive reward possible (scoring mechanics active)",
-          np.max(rewards) > 0)
+
+# Targeted mechanics check: full hopper near hub → scoring should produce fuel_scored > 0
+mech_env = SwerveEnv()
+mech_env.reset()
+mech_env._hopper = 60.0
+mech_env._robot.reset(x=2.0, y=2.55, heading=0.0)
+_, _, _, _, mech_info = mech_env.step(np.zeros(3, dtype=np.float32))
+check("scoring mechanics active (fuel scored when near hub with full hopper)",
+      mech_info.get("fuel_scored", 0) > 0)
+mech_env.close()
 
 env.close()
 print()
