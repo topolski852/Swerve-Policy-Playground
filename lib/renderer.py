@@ -94,6 +94,10 @@ class Renderer:
             frame = pygame.surfarray.array3d(self.screen).transpose(1, 0, 2)
             self._video_writer.append_data(frame)
 
+    def set_waypoints(self, waypoints):
+        """Update the path overlay mid-session (used by path_randomizer)."""
+        self._waypoints = list(waypoints) if waypoints else []
+
     def close(self):
         if self._video_writer is not None:
             self._video_writer.close()
