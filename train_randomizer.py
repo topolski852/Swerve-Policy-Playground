@@ -47,7 +47,7 @@ RECORD_STEPS = [
 SAC_KWARGS = dict(
     policy          = "MlpPolicy",
     learning_rate   = 3e-4,
-    buffer_size     = 200_000,
+    buffer_size     = 1_000_000,
     learning_starts = 10_000,
     batch_size      = 256,
     tau             = 0.005,
@@ -292,13 +292,16 @@ def main():
             reset_num_timesteps = (args.resume is None),
             progress_bar        = True,
         )
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError, BrokenPipeError):
         print("\nTraining interrupted by user.")
-
-    final_path = os.path.join(CHECKPOINT_DIR, "randomizer_final.zip")
-    model.save(final_path)
-    print(f"\nFinal model saved to: {final_path}")
-    env.close()
+    finally:
+        final_path = os.path.join(CHECKPOINT_DIR, "randomizer_final.zip")
+        model.save(final_path)
+        print(f"\nFinal model saved to: {final_path}")
+        try:
+            env.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
