@@ -8,8 +8,8 @@
 #
 # Action space  : Box(3,) — [vx, vy, omega] normalized to [-1, 1]
 #                 omega zeroed (translation-only phase)
-# Observation   : 6-element vector — see OBS_LABELS
-# Reward        : progress toward waypoints + arrival bonuses
+# Observation   : 8-element vector — see OBS_LABELS
+# Reward        : monotone approach reward + arrival bonuses (no milestone rings)
 # ──────────────────────────────────────────────────────────────────────────────
 
 import math
@@ -24,9 +24,9 @@ from lib.field_constants import (
     WAYPOINT_PASS_RADIUS,
 )
 from path_randomizer.constants import (
-    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS, MAX_WAYPOINT_DISTANCE,
-    MILESTONE_FRACTIONS, MILESTONE_BONUSES,
-    RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
+    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS,
+    MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
+    RW_APPROACH, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
 )
 
@@ -89,12 +89,21 @@ class SwerveEnv(gym.Env):
         obs_high = np.array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
-        self._robot             = SwerveState()
-        self._tracker           = WaypointTracker()
-        self._waypoints         = []
-        self._step_count        = 0
-        self._milestones_earned = set()   # indices into MILESTONE_FRACTIONS earned for current wp
-        self._renderer          = None
+        self._robot      = SwerveState()
+        self._tracker    = WaypointTracker()
+        self._waypoints  = []
+        self._step_count = 0
+        self._renderer   = None
+
+        # Configurable difficulty — defaults to full training values.
+        # test_randomizer.py may override these via setattr for diagnostic runs.
+        self._n_waypoints_min = N_WAYPOINTS_MIN
+        self._n_waypoints_max = N_WAYPOINTS_MAX
+        self._wp_distance_max = MAX_WAYPOINT_DISTANCE
+
+        # Monotone approach tracker: seeded to actual distance on each reset/advance
+        # so the first step only earns reward for real progress (never inf).
+        self._best_dist_to_wp = 0.0
 
     # ──────────────────────────────────────────────────────────────────────────
     # Gymnasium API
@@ -106,13 +115,13 @@ class SwerveEnv(gym.Env):
         sx, sy = self._random_valid_pos()
         self._robot.reset(x=sx, y=sy, heading=0.0)
 
-        n = int(self.np_random.integers(N_WAYPOINTS_MIN, N_WAYPOINTS_MAX + 1))
-        # Chain each waypoint within MAX_WAYPOINT_DISTANCE of the previous so
+        n = int(self.np_random.integers(self._n_waypoints_min, self._n_waypoints_max + 1))
+        # Chain each waypoint within _wp_distance_max of the previous so
         # the agent never has to cross the full field in one hop.
         nav_wps = []
         prev_x, prev_y = sx, sy
         for _ in range(n):
-            wx, wy = self._random_pos_near(prev_x, prev_y, MAX_WAYPOINT_DISTANCE)
+            wx, wy = self._random_pos_near(prev_x, prev_y, self._wp_distance_max)
             nav_wps.append((wx, wy))
             prev_x, prev_y = wx, wy
 
@@ -121,8 +130,14 @@ class SwerveEnv(gym.Env):
         self._waypoints = [(sx, sy)] + nav_wps
         self._tracker.reset(self._waypoints, start_idx=1)
 
-        self._step_count        = 0
-        self._milestones_earned = set()
+        self._step_count = 0
+        # Seed best-dist to the actual starting distance so the first step only
+        # earns reward for real progress, not for the inf → real_dist gap.
+        if not self._tracker.done:
+            wx, wy = self._tracker.current
+            self._best_dist_to_wp = math.hypot(sx - wx, sy - wy)
+        else:
+            self._best_dist_to_wp = 0.0
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -136,30 +151,34 @@ class SwerveEnv(gym.Env):
 
         rx, ry = self._robot.x, self._robot.y
 
-        # ── Milestone rings + arrival ─────────────────────────────────────────
-        milestone_reward = 0.0
-        waypoint_bonus   = 0.0
+        # ── Approach reward + arrival ─────────────────────────────────────────
+        approach_reward = 0.0
+        waypoint_bonus  = 0.0
         if not self._tracker.done:
             wx, wy = self._tracker.current
             dist   = math.hypot(rx - wx, ry - wy)
 
-            # One-time bonuses at 75%/50%/25% of MAX_WAYPOINT_DISTANCE.
-            # Each index can only fire once per waypoint; backing off can't re-earn it.
-            for i, (frac, bonus) in enumerate(zip(MILESTONE_FRACTIONS, MILESTONE_BONUSES)):
-                if i not in self._milestones_earned and dist < frac * MAX_WAYPOINT_DISTANCE:
-                    self._milestones_earned.add(i)
-                    milestone_reward += bonus
+            # Monotone approach reward: only fires when the robot sets a new
+            # personal-best distance to the current waypoint. Back-and-forth
+            # oscillation earns nothing because it can't beat the existing best.
+            approach_reward       = max(0.0, self._best_dist_to_wp - dist) * RW_APPROACH
+            self._best_dist_to_wp = min(self._best_dist_to_wp, dist)
 
             advanced = self._tracker.update(rx, ry)
             if advanced:
-                waypoint_bonus          = RW_WAYPOINT_BONUS * advanced
-                self._milestones_earned = set()   # reset rings for next waypoint
+                waypoint_bonus = RW_WAYPOINT_BONUS * advanced
+                # Seed to actual distance to the new current waypoint, not inf.
+                if not self._tracker.done:
+                    wx2, wy2 = self._tracker.current
+                    self._best_dist_to_wp = math.hypot(rx - wx2, ry - wy2)
+                else:
+                    self._best_dist_to_wp = 0.0
 
         goal_done = self._tracker.done
 
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
-            milestone_reward
+            approach_reward
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
@@ -236,7 +255,7 @@ class SwerveEnv(gym.Env):
         pad = r + 0.1
         for _ in range(200):
             angle = float(self.np_random.uniform(0.0, 2.0 * math.pi))
-            dist  = float(self.np_random.uniform(0.0, max_dist))
+            dist  = float(self.np_random.uniform(MIN_WAYPOINT_DISTANCE, max_dist))
             x = cx + dist * math.cos(angle)
             y = cy + dist * math.sin(angle)
             if x < pad or x > FIELD_LENGTH - pad: continue

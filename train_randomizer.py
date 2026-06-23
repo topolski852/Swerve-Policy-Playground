@@ -29,12 +29,14 @@ from path_randomizer.swerve_env import SwerveEnv
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
-TOTAL_TIMESTEPS   = 2_000_000
+TOTAL_TIMESTEPS   = 5_000_000
 CHECKPOINT_FREQ   = 10_000
 EVAL_FREQ_DEFAULT = 20_000
+N_ENVS            = 2
 LOG_DIR           = "path_randomizer/logs"
 CHECKPOINT_DIR    = "path_randomizer/checkpoints"
 RECORDINGS_DIR    = "path_randomizer/recordings"
+
 
 RECORD_STEPS = [
     500, 1_000, 2_000, 5_000, 10_000,
@@ -56,6 +58,7 @@ SAC_KWARGS = dict(
     verbose         = 1,
     device          = "cpu",
 )
+
 
 
 # ── Render-eval callback ───────────────────────────────────────────────────────
@@ -232,8 +235,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--resume",         type=str,  default=None)
     parser.add_argument("--steps",          type=int,  default=TOTAL_TIMESTEPS)
-    parser.add_argument("--n-envs",         type=int,  default=1,
-                        help="parallel envs via SubprocVecEnv (default 1 = no subprocess)")
+    parser.add_argument("--n-envs",         type=int,  default=N_ENVS,
+                        help=f"parallel envs via SubprocVecEnv (default {N_ENVS})")
     parser.add_argument("--render-eval",    action="store_true")
     parser.add_argument("--eval-freq",      type=int,  default=EVAL_FREQ_DEFAULT)
     parser.add_argument("--render-capture", action="store_true")
@@ -246,11 +249,8 @@ def main():
     reward_csv = os.path.join(LOG_DIR, f"rewards_{timestamp}.csv")
     print(f"Logging rewards to: {reward_csv}")
 
-    if args.n_envs > 1:
-        env = make_vec_env(SwerveEnv, n_envs=args.n_envs, vec_env_cls=SubprocVecEnv)
-        print(f"Using {args.n_envs} parallel envs (SubprocVecEnv).")
-    else:
-        env = SwerveEnv()
+    env = make_vec_env(SwerveEnv, n_envs=args.n_envs, vec_env_cls=SubprocVecEnv)
+    print(f"Using {args.n_envs} parallel envs (SubprocVecEnv).")
 
     checkpoint_cb = CheckpointCallback(
         save_freq   = max(1, CHECKPOINT_FREQ // max(args.n_envs, 1)),
@@ -280,8 +280,9 @@ def main():
         model = SAC(env=env, **SAC_KWARGS)
 
     print(f"\nStarting randomized-waypoint training for {args.steps:,} timesteps.")
-    print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
     print(f"Envs: {args.n_envs}  |  device: {SAC_KWARGS['device']}")
+    print(f"Waypoints: {3}-{12} per episode, max {6.0} m apart (uniform throughout)")
+    print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
 
     try:

@@ -6,21 +6,22 @@
 
 # ── Episode parameters ─────────────────────────────────────────────────────────
 
-N_WAYPOINTS_MIN      = 3     # fewest waypoints per episode
-N_WAYPOINTS_MAX      = 6     # most waypoints per episode
-MAX_EPISODE_STEPS    = 3000  # ~60 s — generous budget for 3-6 waypoints
-MAX_WAYPOINT_DISTANCE = 5.0  # metres — max distance between consecutive waypoints
+MAX_EPISODE_STEPS     = 3000  # ~60 s — generous budget for 3-12 waypoints
+
+N_WAYPOINTS_MIN       = 3     # fewest waypoints per episode
+N_WAYPOINTS_MAX       = 12    # most waypoints per episode
+MAX_WAYPOINT_DISTANCE = 6.0   # metres — practical FRC ceiling; > 6 m flagged as unexpected in app
+MIN_WAYPOINT_DISTANCE = 1.0   # metres — floor so the robot must physically move between points
+                               # (must exceed WAYPOINT_PASS_RADIUS = 0.65 m)
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
 
-# Milestone rings: one-time bonuses at 75%/50%/25% of MAX_WAYPOINT_DISTANCE.
-# Each ring can only be earned once per waypoint — can't be re-triggered by
-# backing off and re-approaching. Values increase toward the target so the agent
-# is always incentivised to push to the next ring rather than hover.
-MILESTONE_FRACTIONS  = [0.75, 0.50, 0.25]   # fraction of MAX_WAYPOINT_DISTANCE
-MILESTONE_BONUSES    = [3.0,  5.0,  10.0]   # one-time reward at each ring
+# Approach reward: earned per metre of new closest-approach progress toward the
+# current waypoint. Monotone — only fires when the robot sets a new personal best
+# distance, so back-and-forth oscillation cannot farm infinite reward.
+RW_APPROACH          =  2.0   # per metre of new closest-approach progress
 
-RW_WAYPOINT_BONUS    = 20.0   # one-time bonus on arrival (< WAYPOINT_PASS_RADIUS)
+RW_WAYPOINT_BONUS    = 50.0   # one-time bonus on arrival (< WAYPOINT_PASS_RADIUS)
 RW_GOAL_BONUS        = 75.0   # bonus for completing all waypoints in the episode
 RW_TIME_PENALTY      = -0.01  # per step — keeps the robot moving
-RW_COLLISION_PENALTY = -25.0  # one-time on wall or obstacle contact
+RW_COLLISION_PENALTY = -100.0  # one-time on wall or obstacle contact

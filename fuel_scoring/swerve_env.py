@@ -29,6 +29,7 @@ from lib.field_constants import (
 from fuel_scoring.constants import (
     PHASE1_EPISODE_STEPS, MAX_EPISODE_STEPS, MATCH_STEP_DT, SCORING_START_HOPPER,
     HOPPER_CAPACITY, FUEL_FILL_RATE_MAX, FUEL_FILL_MIN_SPEED, FUEL_SHOOT_RATE,
+    SCORING_OPTIMAL_DEPTH, SCORING_DEPTH_SIGMA,
     CONTRIBUTED_SCORE_NORM, TOTAL_SCORE_NORM,
     RW_FUEL_SCORED, RW_FUEL_COLLECTED,
     RW_FULL_HOPPER_IN_NEUTRAL, RW_EMPTY_HOPPER_IN_ALLIANCE,
@@ -143,17 +144,22 @@ class SwerveEnv(gym.Env):
             self._hopper  += collected
             fuel_collected = collected
 
-        # Score: alliance zone — hopper drains at full rate, but scored fuel is
-        # scaled by a shot multiplier that rewards being slow and close to the hub.
+        # Score: alliance zone — hopper drains at full rate, scored fuel scaled by:
+        #   speed_factor : stationary = 1.0 (best), full speed = 0.1
+        #   dist_factor  : Gaussian bell centred at SCORING_OPTIMAL_DEPTH inside
+        #                  alliance zone — too close OR too far reduces accuracy.
+        #                  Peak at x ≈ 2.53 m; boundary (x=4.029) ≈ 32% efficiency.
         fuel_scored = 0.0
-        if rx < BLUE_ALLIANCE_MAX_X and self._hopper > 0:
+        if rx < BLUE_ALLIANCE_MAX_X - ROBOT_BUMPER_HALF and self._hopper > 0:
             shot = min(self._hopper, FUEL_SHOOT_RATE)
             self._hopper -= shot
 
-            dist_to_hub  = math.hypot(rx - BLUE_HUB_CENTER[0], ry - BLUE_HUB_CENTER[1])
-            speed_factor = max(0.1, 1.0 - 0.9 * (speed / MAX_SPEED_MPS))
-            dist_factor  = max(0.5, 1.0 - 0.5 * max(0.0, (dist_to_hub - 1.0) / 5.0))
-            fuel_scored  = shot * speed_factor * dist_factor
+            speed_factor   = max(0.1, 1.0 - 0.9 * (speed / MAX_SPEED_MPS))
+            alliance_depth = max(0.0, BLUE_ALLIANCE_MAX_X - rx)
+            dist_factor    = max(0.1, math.exp(
+                -0.5 * ((alliance_depth - SCORING_OPTIMAL_DEPTH) / SCORING_DEPTH_SIGMA) ** 2
+            ))
+            fuel_scored    = shot * speed_factor * dist_factor
 
             self._contributed_score += fuel_scored
             self._total_score       += fuel_scored

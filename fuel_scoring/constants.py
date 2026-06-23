@@ -18,6 +18,8 @@ HOPPER_CAPACITY      = 60.0    # maximum fuel units stored
 FUEL_FILL_RATE_MAX   = 1.0     # fuel/step at MAX_SPEED_MPS (log-scaled — see swerve_env)
 FUEL_FILL_MIN_SPEED  = 0.5     # m/s — zero collection below this threshold
 FUEL_SHOOT_RATE      = 0.4     # fuel units scored per step while in alliance zone (any speed)
+SCORING_OPTIMAL_DEPTH = 1.5   # metres inside alliance zone for peak shot accuracy (x ≈ 2.53 m)
+SCORING_DEPTH_SIGMA   = 1.0   # sweet-spot spread — ±1 sigma gives ~61% efficiency
 
 # ── Score observation normalization ───────────────────────────────────────────
 
