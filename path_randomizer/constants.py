@@ -21,7 +21,7 @@ MIN_WAYPOINT_DISTANCE = 1.0   # metres — floor so the robot must physically mo
 # distance, so back-and-forth oscillation cannot farm infinite reward.
 RW_APPROACH          =  2.0   # per metre of new closest-approach progress
 
-RW_WAYPOINT_BONUS    = 50.0   # one-time bonus on arrival (< WAYPOINT_PASS_RADIUS)
+RW_WAYPOINT_BONUS    = 100.0  # one-time bonus on arrival (< WAYPOINT_PASS_RADIUS)
 RW_GOAL_BONUS        = 75.0   # bonus for completing all waypoints in the episode
-RW_TIME_PENALTY      = -0.01  # per step — keeps the robot moving
-RW_COLLISION_PENALTY = -100.0  # one-time on wall or obstacle contact
+RW_TIME_PENALTY      = -0.03  # per step — creates urgency to commit and advance
+RW_COLLISION_PENALTY = -50.0   # one-time on wall or obstacle contact

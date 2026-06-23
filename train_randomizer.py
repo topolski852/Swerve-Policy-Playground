@@ -29,7 +29,7 @@ from path_randomizer.swerve_env import SwerveEnv
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
-TOTAL_TIMESTEPS   = 5_000_000
+TOTAL_TIMESTEPS   = 7_000_000
 CHECKPOINT_FREQ   = 10_000
 EVAL_FREQ_DEFAULT = 20_000
 N_ENVS            = 2
