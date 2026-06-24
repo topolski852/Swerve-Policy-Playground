@@ -53,6 +53,10 @@ IMPASSABLE_RECTS = [
 
 # ── Hub scoring targets ────────────────────────────────────────────────────────
 BLUE_HUB_CENTER = (4.626, 4.035)
+
+# Hub rectangle Y bounds (X bounds match the bump zone: BLUE_ALLIANCE_MAX_X → NEUTRAL_MIN_X)
+BLUE_HUB_Y1 = 3.438   # bottom edge of Blue hub
+BLUE_HUB_Y2 = 4.632   # top edge of Blue hub
 RED_HUB_CENTER  = (11.914, 4.035)
 
 # ── Zone X boundaries ─────────────────────────────────────────────────────────

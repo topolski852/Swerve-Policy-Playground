@@ -24,7 +24,7 @@ from lib.field_constants import (
     FIELD_LENGTH, FIELD_WIDTH,
     ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
     BLUE_ALLIANCE_MAX_X, NEUTRAL_MIN_X, NEUTRAL_MAX_X,
-    BLUE_HUB_CENTER,
+    BLUE_HUB_CENTER, BLUE_HUB_Y1, BLUE_HUB_Y2,
 )
 from fuel_scoring.constants import (
     PHASE1_EPISODE_STEPS, MAX_EPISODE_STEPS, MATCH_STEP_DT, SCORING_START_HOPPER,
@@ -37,6 +37,7 @@ from fuel_scoring.constants import (
     RW_MILESTONE_100, RW_MILESTONE_360, RW_MILESTONE_600, RW_MILESTONE_900,
     RW_JERK,
     RW_BUMP_IDLE, BUMP_IDLE_MAX_SPEED,
+    HUB_SAFE_DIST, RW_HUB_PROXIMITY,
     RW_COLLISION_PENALTY,
 )
 
@@ -256,6 +257,17 @@ class SwerveEnv(gym.Env):
             else 0.0
         )
 
+        # Penalty: hub proximity shaping — linear ramp from 0 at HUB_SAFE_DIST (0.5m from
+        # hub edge) to RW_HUB_PROXIMITY at d=0. Effective at collision boundary (~0.343m
+        # from edge) = ~-0.47/step. Dense gradient so robot learns to avoid hub BEFORE impact.
+        r_hub_proximity = 0.0
+        if BLUE_ALLIANCE_MAX_X <= self._robot.x <= NEUTRAL_MIN_X:
+            nx = max(BLUE_ALLIANCE_MAX_X, min(self._robot.x, NEUTRAL_MIN_X))
+            ny = max(BLUE_HUB_Y1,        min(self._robot.y, BLUE_HUB_Y2))
+            dist_to_hub_edge = math.hypot(self._robot.x - nx, self._robot.y - ny)
+            if dist_to_hub_edge < HUB_SAFE_DIST:
+                r_hub_proximity = RW_HUB_PROXIMITY * (1.0 - dist_to_hub_edge / HUB_SAFE_DIST)
+
         # One-time milestone bonuses (FRC ranking point equivalents)
         r_milestone = 0.0
         if not self._milestone_100_reached and self._contributed_score >= 100.0:
@@ -273,7 +285,7 @@ class SwerveEnv(gym.Env):
 
         r_jerk = RW_JERK * action_delta
 
-        reward = r_fuel_scored + r_fuel_collected + r_full_hopper + r_empty_alliance + r_neutral_idle + r_bump_idle + r_milestone + r_jerk
+        reward = r_fuel_scored + r_fuel_collected + r_full_hopper + r_empty_alliance + r_neutral_idle + r_bump_idle + r_hub_proximity + r_milestone + r_jerk
 
         info = {
             "fuel_scored":    fuel_scored,
