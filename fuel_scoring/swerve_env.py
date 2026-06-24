@@ -100,7 +100,7 @@ class SwerveEnv(gym.Env):
         super().reset(seed=seed)
         if self._random_start:
             sx, sy = RANDOM_STARTS[self.np_random.integers(len(RANDOM_STARTS))]
-            self._hopper = float(self.np_random.uniform(0.0, HOPPER_CAPACITY))
+            self._hopper = SCORING_START_HOPPER
         else:
             sx, sy = START_X, START_Y
             self._hopper = SCORING_START_HOPPER
