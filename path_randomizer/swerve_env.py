@@ -28,6 +28,7 @@ from path_randomizer.constants import (
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
     RW_APPROACH, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
+    OBSTACLE_DANGER_MARGIN, RW_OBSTACLE_PROXIMITY,
 )
 
 FIELD_DIAGONAL = math.sqrt(FIELD_LENGTH ** 2 + FIELD_WIDTH ** 2)
@@ -176,12 +177,29 @@ class SwerveEnv(gym.Env):
 
         goal_done = self._tracker.done
 
+        # ── Obstacle proximity shaping ────────────────────────────────────────
+        # Same math as FST: danger zone extends OBSTACLE_DANGER_MARGIN beyond the
+        # robot bumper. Penalty ramps from 0 at the outer edge to
+        # RW_OBSTACLE_PROXIMITY at the collision boundary.
+        proximity_penalty = 0.0
+        danger_r = ROBOT_BUMPER_HALF + OBSTACLE_DANGER_MARGIN
+        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
+            if (rx > ox1 - danger_r and rx < ox2 + danger_r and
+                    ry > oy1 - danger_r and ry < oy2 + danger_r):
+                nx   = max(ox1, min(rx, ox2))
+                ny   = max(oy1, min(ry, oy2))
+                dist = math.hypot(rx - nx, ry - ny)
+                if dist < danger_r:
+                    depth = min(1.0, (danger_r - dist) / OBSTACLE_DANGER_MARGIN)
+                    proximity_penalty += RW_OBSTACLE_PROXIMITY * depth
+
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
             approach_reward
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
+            + proximity_penalty
         )
 
         # ── Termination ───────────────────────────────────────────────────────
