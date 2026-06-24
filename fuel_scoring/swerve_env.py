@@ -228,10 +228,12 @@ class SwerveEnv(gym.Env):
             else 0.0
         )
 
-        # Penalty: empty hopper sitting in alliance — go collect more
+        # Penalty: empty hopper anywhere outside the neutral collection zone.
+        # Covers both the alliance zone AND the bump — continuous signal pushing
+        # the robot all the way through the bump into neutral when hopper is empty.
         r_empty_alliance = (
             RW_EMPTY_HOPPER_IN_ALLIANCE
-            if self._robot.x < BLUE_ALLIANCE_MAX_X and self._hopper <= 0
+            if self._robot.x < NEUTRAL_MIN_X and self._hopper <= 0
             else 0.0
         )
 
