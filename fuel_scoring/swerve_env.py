@@ -258,21 +258,20 @@ class SwerveEnv(gym.Env):
         )
 
         # Penalty: obstacle proximity shaping — generalized to all impassable rectangles.
-        # Each obstacle is treated as if expanded by OBSTACLE_DANGER_MARGIN beyond the robot
-        # bumper. Penalty grows linearly from 0 at the outer danger edge to
-        # RW_OBSTACLE_PROXIMITY at the actual collision boundary (ROBOT_BUMPER_HALF from edge).
-        # Gives the agent a dense gradient to steer away before impact, not just a cliff.
+        # AABB-to-AABB distance (square bumpers), consistent with _check_collision.
+        # bumper_dist = 0 at collision boundary, OBSTACLE_DANGER_MARGIN at outer edge.
         r_obstacle_proximity = 0.0
-        bx, by   = self._robot.x, self._robot.y
-        danger_r = ROBOT_BUMPER_HALF + OBSTACLE_DANGER_MARGIN
+        rx, ry   = self._robot.x, self._robot.y
+        r        = ROBOT_BUMPER_HALF
+        detect_r = r + OBSTACLE_DANGER_MARGIN
         for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
-            if (bx > ox1 - danger_r and bx < ox2 + danger_r and
-                    by > oy1 - danger_r and by < oy2 + danger_r):
-                nx   = max(ox1, min(bx, ox2))
-                ny   = max(oy1, min(by, oy2))
-                dist = math.hypot(bx - nx, by - ny)
-                if dist < danger_r:
-                    depth = min(1.0, (danger_r - dist) / OBSTACLE_DANGER_MARGIN)
+            if (rx > ox1 - detect_r and rx < ox2 + detect_r and
+                    ry > oy1 - detect_r and ry < oy2 + detect_r):
+                bx = max(0.0, max(ox1 - rx, rx - ox2) - r)
+                by = max(0.0, max(oy1 - ry, ry - oy2) - r)
+                bumper_dist = math.hypot(bx, by)
+                if bumper_dist < OBSTACLE_DANGER_MARGIN:
+                    depth = 1.0 - bumper_dist / OBSTACLE_DANGER_MARGIN
                     r_obstacle_proximity += RW_OBSTACLE_PROXIMITY * depth
 
         # One-time milestone bonuses (FRC ranking point equivalents)

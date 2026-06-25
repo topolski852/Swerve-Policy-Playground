@@ -41,5 +41,5 @@ RW_JERK                     = -0.1  # per unit of mean |Δaction| (vx/vy normali
 RW_BUMP_IDLE                = -0.5  # per step: stationary on the bump (4.029–5.223 m) — robot should transit, not camp
 BUMP_IDLE_MAX_SPEED         =  0.1  # m/s — below this on the bump triggers the penalty (transit at any real speed is free)
 OBSTACLE_DANGER_MARGIN      =  0.4  # metres of warning zone beyond the robot bumper around each obstacle
-RW_OBSTACLE_PROXIMITY       = -1.5  # per-step at collision boundary; 0 at outer danger edge
+RW_OBSTACLE_PROXIMITY       = -3.0  # per-step at collision boundary; 0 at outer danger edge
 RW_COLLISION_PENALTY        = -50.0  # starting value — ramped to -200 at Phase 3 via CollisionRampCallback

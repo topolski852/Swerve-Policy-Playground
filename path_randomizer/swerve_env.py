@@ -178,19 +178,20 @@ class SwerveEnv(gym.Env):
         goal_done = self._tracker.done
 
         # ── Obstacle proximity shaping ────────────────────────────────────────
-        # Same math as FST: danger zone extends OBSTACLE_DANGER_MARGIN beyond the
-        # robot bumper. Penalty ramps from 0 at the outer edge to
-        # RW_OBSTACLE_PROXIMITY at the collision boundary.
+        # AABB-to-AABB distance, consistent with _check_collision (square bumpers).
+        # bx/by = gap from bumper face to obstacle face on each axis; 0 when touching.
+        # bumper_dist = 0 at collision boundary, OBSTACLE_DANGER_MARGIN at outer edge.
         proximity_penalty = 0.0
-        danger_r = ROBOT_BUMPER_HALF + OBSTACLE_DANGER_MARGIN
+        r        = ROBOT_BUMPER_HALF
+        detect_r = r + OBSTACLE_DANGER_MARGIN
         for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
-            if (rx > ox1 - danger_r and rx < ox2 + danger_r and
-                    ry > oy1 - danger_r and ry < oy2 + danger_r):
-                nx   = max(ox1, min(rx, ox2))
-                ny   = max(oy1, min(ry, oy2))
-                dist = math.hypot(rx - nx, ry - ny)
-                if dist < danger_r:
-                    depth = min(1.0, (danger_r - dist) / OBSTACLE_DANGER_MARGIN)
+            if (rx > ox1 - detect_r and rx < ox2 + detect_r and
+                    ry > oy1 - detect_r and ry < oy2 + detect_r):
+                bx = max(0.0, max(ox1 - rx, rx - ox2) - r)
+                by = max(0.0, max(oy1 - ry, ry - oy2) - r)
+                bumper_dist = math.hypot(bx, by)
+                if bumper_dist < OBSTACLE_DANGER_MARGIN:
+                    depth = 1.0 - bumper_dist / OBSTACLE_DANGER_MARGIN
                     proximity_penalty += RW_OBSTACLE_PROXIMITY * depth
 
         # ── Reward ────────────────────────────────────────────────────────────
