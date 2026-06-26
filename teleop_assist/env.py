@@ -1,0 +1,369 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# teleop_assist/env.py
+# Gymnasium environment for the Teleop Assist policy.
+#
+# The policy sits between the joystick and swerve.drive() on the real robot.
+# It sees raw (drifty) joystick input and field-context observations, then
+# outputs ChassisSpeeds that are safe — slowing down near obstacles rather
+# than blindly following a driver who is about to hit a wall.
+#
+# Observation (OBS_DIM = 18):
+#   [joy_x, joy_y, joy_rot,          raw joystick with per-episode drift
+#    vx_n, vy_n, omega_n,            current chassis velocity, normalized
+#    sin_h, cos_h,                   heading (avoids wrap discontinuity)
+#    rx_n, ry_n,                     field position, normalized
+#    prox×8]                         ray distances, 0=touching, 1=clear
+#
+# Action (3,):
+#   [vx_n, vy_n, omega_n] normalized to [-1, 1], robot frame
+#   → swerve.drive(ChassisSpeeds(vx_n*MAX_SPEED, vy_n*MAX_SPEED, omega_n*MAX_ANGULAR))
+#
+# Key training mechanics:
+#   DRIFT INJECTION  — per-episode random stick offset; reward computed against
+#                      true intent so policy learns to ignore noise-floor inputs.
+#   OBSTACLE APPROACH — proximity penalty scales with (speed × closeness in
+#                       direction of travel); collision ends the episode with -50.
+#   SQUARE ROBOT     — AABB collision uses ROBOT_BUMPER_HALF on all sides,
+#                      matching the real robot's bumper geometry.
+# ──────────────────────────────────────────────────────────────────────────────
+
+import math
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
+
+from lib.kinematics import SwerveState
+from lib.field_constants import (
+    MAX_SPEED_MPS, MAX_ANGULAR_RPS,
+    FIELD_LENGTH, FIELD_WIDTH,
+    ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
+)
+from lib.raycaster import cast_rays, RAY_DIRS
+from teleop_assist.constants import (
+    MAX_EPISODE_STEPS,
+    DRIFT_MAX, DRIFT_FLOOR,
+    JOY_TARGET_REROLL_MIN, JOY_TARGET_REROLL_MAX, JOY_TARGET_ARRIVE_R,
+    JOY_SPEED_MIN, JOY_SPEED_MAX,
+    RAY_MAX_DISTANCE, DANGER_ZONE_NORM,
+    RW_INTENT, RW_APPROACH, RW_SMOOTH, RW_COLLISION, RW_STILL_WHEN_DRIFT,
+)
+
+OBS_DIM = 18
+OBS_LABELS = [
+    "joy_x", "joy_y", "joy_rot",
+    "vx_n", "vy_n", "omega_n",
+    "sin_h", "cos_h",
+    "rx_n", "ry_n",
+    "prox_f", "prox_fl", "prox_l", "prox_bl",
+    "prox_b", "prox_br", "prox_r", "prox_fr",
+]
+
+
+class TeleopAssistEnv(gym.Env):
+
+    metadata = {"render_modes": ["human"], "render_fps": 60}
+
+    def __init__(self, render_mode=None):
+        super().__init__()
+        self.render_mode = render_mode
+
+        self.action_space = spaces.Box(
+            low=-1.0, high=1.0, shape=(3,), dtype=np.float32
+        )
+
+        obs_low  = np.array(
+            [-1, -1, -1,          # joystick
+             -1, -1, -1,          # velocity
+             -1, -1,              # sin/cos heading
+              0,  0,              # position
+              0,  0,  0,  0,  0,  0,  0,  0],  # proximity
+            dtype=np.float32,
+        )
+        obs_high = np.array(
+            [ 1,  1,  1,
+              1,  1,  1,
+              1,  1,
+              1,  1,
+              1,  1,  1,  1,  1,  1,  1,  1],
+            dtype=np.float32,
+        )
+        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
+
+        self._robot = SwerveState()
+
+        # Per-episode state
+        self._drift        = np.zeros(3, dtype=np.float32)  # [dx, dy, drot]
+        self._joy_target_x = 0.0
+        self._joy_target_y = 0.0
+        self._joy_speed    = 1.0
+        self._joy_reroll_countdown = 0
+
+        self._ray_distances = np.full(8, RAY_MAX_DISTANCE, dtype=np.float32)
+        self._prev_action   = np.zeros(3, dtype=np.float32)
+        self._step_count    = 0
+
+        self._renderer = None
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Gymnasium API
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def reset(self, *, seed=None, options=None):
+        super().reset(seed=seed)
+
+        # Random safe spawn
+        sx, sy = self._sample_safe_pos()
+        heading = float(self.np_random.uniform(-math.pi, math.pi))
+        self._robot.reset(x=sx, y=sy, heading=heading)
+
+        # Per-episode drift — fixed for the whole episode so the policy can't
+        # just subtract the initial reading; it must learn to threshold.
+        self._drift = self.np_random.uniform(
+            -DRIFT_MAX, DRIFT_MAX, size=3
+        ).astype(np.float32)
+
+        # First joystick intent target
+        self._sample_new_joy_target()
+
+        self._ray_distances = cast_rays(sx, sy, heading)
+        self._prev_action   = np.zeros(3, dtype=np.float32)
+        self._step_count    = 0
+
+        return self._get_obs(), {}
+
+    def step(self, action: np.ndarray):
+        action = np.clip(action, -1.0, 1.0).astype(np.float32)
+
+        # Advance joystick intent target if needed
+        self._update_joy_target()
+
+        # Apply action to robot physics
+        self._robot.step(
+            float(action[0]) * MAX_SPEED_MPS,
+            float(action[1]) * MAX_SPEED_MPS,
+            float(action[2]) * MAX_ANGULAR_RPS,
+        )
+        self._step_count += 1
+
+        # Update proximity after moving
+        self._ray_distances = cast_rays(
+            self._robot.x, self._robot.y, self._robot.heading
+        )
+
+        # Collision check — square AABB matching real robot bumper geometry
+        collision = self._check_collision()
+        terminated = collision
+        truncated  = (self._step_count >= MAX_EPISODE_STEPS)
+
+        reward, info = self._compute_reward(action)
+
+        if collision:
+            reward += RW_COLLISION
+            info["collision"] = True
+
+        self._prev_action = action.copy()
+
+        obs = self._get_obs()
+        if self.render_mode == "human":
+            self.render()
+
+        return obs, reward, terminated, truncated, info
+
+    def render(self):
+        if self._renderer is None:
+            from lib.renderer import Renderer
+            self._renderer = Renderer()
+        self._renderer.draw(self._robot, None, self._robot.module_states)
+
+    def close(self):
+        if self._renderer is not None:
+            self._renderer.close()
+            self._renderer = None
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Collision (square AABB — matches SwerveEnv and FuelScoringEnv)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _check_collision(self) -> bool:
+        rx, ry = self._robot.x, self._robot.y
+        r = ROBOT_BUMPER_HALF
+
+        if rx - r < 0 or rx + r > FIELD_LENGTH:
+            return True
+        if ry - r < 0 or ry + r > FIELD_WIDTH:
+            return True
+
+        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
+            if rx > ox1 - r and rx < ox2 + r and ry > oy1 - r and ry < oy2 + r:
+                return True
+
+        return False
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Joystick intent simulation
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _update_joy_target(self):
+        dx = self._joy_target_x - self._robot.x
+        dy = self._joy_target_y - self._robot.y
+        self._joy_reroll_countdown -= 1
+
+        if math.hypot(dx, dy) < JOY_TARGET_ARRIVE_R or self._joy_reroll_countdown <= 0:
+            self._sample_new_joy_target()
+
+    def _sample_new_joy_target(self):
+        for _ in range(100):
+            tx = float(self.np_random.uniform(1.0, FIELD_LENGTH - 1.0))
+            ty = float(self.np_random.uniform(1.0, FIELD_WIDTH  - 1.0))
+            if not self._pos_in_obstacle(tx, ty):
+                self._joy_target_x = tx
+                self._joy_target_y = ty
+                break
+
+        self._joy_speed = float(self.np_random.uniform(JOY_SPEED_MIN, JOY_SPEED_MAX))
+        self._joy_reroll_countdown = int(
+            self.np_random.integers(JOY_TARGET_REROLL_MIN, JOY_TARGET_REROLL_MAX + 1)
+        )
+
+    def _true_joy_robot(self) -> np.ndarray:
+        """
+        True joystick intent as a 2-vector in robot frame, magnitude = joy_speed.
+        Computed from field-frame direction toward the current intent target,
+        then rotated into robot frame so the reward is frame-consistent with
+        the action space.  Returns zero when the robot is nearly at the target.
+        """
+        dx = self._joy_target_x - self._robot.x
+        dy = self._joy_target_y - self._robot.y
+        dist = math.hypot(dx, dy)
+
+        if dist < 0.05:
+            return np.zeros(2, dtype=np.float32)
+
+        # Field-frame unit vector toward target
+        fx, fy = dx / dist, dy / dist
+
+        # Rotate into robot frame
+        cos_h = math.cos(self._robot.heading)
+        sin_h = math.sin(self._robot.heading)
+        rx =  fx * cos_h + fy * sin_h
+        ry = -fx * sin_h + fy * cos_h
+
+        return np.array([rx * self._joy_speed, ry * self._joy_speed], dtype=np.float32)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Reward
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _compute_reward(self, action: np.ndarray):
+        true_joy = self._true_joy_robot()
+        joy_mag  = float(np.linalg.norm(true_joy))
+
+        # ── Intent / drift-stillness ───────────────────────────────────────────
+        if joy_mag < DRIFT_FLOOR:
+            # True intent is "stop" — penalise any motion
+            r_intent = 0.0
+            r_still  = RW_STILL_WHEN_DRIFT * float(np.linalg.norm(action[:2]))
+        else:
+            # Reward matching direction AND magnitude (dot product handles both)
+            r_intent = RW_INTENT * float(np.dot(action[:2], true_joy))
+            r_still  = 0.0
+
+        # ── Obstacle approach penalty ──────────────────────────────────────────
+        # For each ray, penalise speed projected onto that ray's direction
+        # weighted by how far into the danger zone the obstacle is.
+        action_xy    = action[:2]
+        action_speed = float(np.linalg.norm(action_xy))
+        r_approach   = 0.0
+
+        if action_speed > 1e-6:
+            action_unit = action_xy / action_speed
+            for i, ray_dir in enumerate(RAY_DIRS):
+                dot_val = float(np.dot(action_unit, ray_dir))
+                if dot_val <= 0.0:
+                    continue   # moving away from or parallel to this ray
+
+                prox_norm = self._ray_distances[i] / RAY_MAX_DISTANCE  # 0=touching, 1=clear
+                if prox_norm >= DANGER_ZONE_NORM:
+                    continue   # obstacle is outside the danger zone
+
+                # danger ∈ (0, 1]: 1 = robot touching surface, approaches 0 at zone edge
+                danger = (DANGER_ZONE_NORM - prox_norm) / DANGER_ZONE_NORM
+                r_approach += dot_val * action_speed * danger
+
+            r_approach *= RW_APPROACH   # RW_APPROACH is negative
+
+        # ── Smoothness ─────────────────────────────────────────────────────────
+        r_smooth = RW_SMOOTH * float(np.linalg.norm(action - self._prev_action))
+
+        reward = r_intent + r_still + r_approach + r_smooth
+        info = {
+            "r_intent":   r_intent,
+            "r_still":    r_still,
+            "r_approach": r_approach,
+            "r_smooth":   r_smooth,
+            "joy_mag":    joy_mag,
+        }
+        return reward, info
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Observation
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _get_obs(self) -> np.ndarray:
+        rx, ry, heading = self._robot.x, self._robot.y, self._robot.heading
+
+        # Observed joystick = true intent (robot frame) + per-episode drift
+        true_joy    = self._true_joy_robot()
+        obs_joy_x   = float(np.clip(true_joy[0] + self._drift[0], -1.0, 1.0))
+        obs_joy_y   = float(np.clip(true_joy[1] + self._drift[1], -1.0, 1.0))
+        obs_joy_rot = float(np.clip(self._drift[2], -1.0, 1.0))   # no rotation intent in v1
+
+        vx_n    = self._robot.vx    / MAX_SPEED_MPS
+        vy_n    = self._robot.vy    / MAX_SPEED_MPS
+        omega_n = self._robot.omega / MAX_ANGULAR_RPS
+
+        sin_h = math.sin(heading)
+        cos_h = math.cos(heading)
+
+        rx_n = rx / FIELD_LENGTH
+        ry_n = ry / FIELD_WIDTH
+
+        # Proximity normalised to [0, 1]: 0=touching, 1=at max range
+        prox = self._ray_distances / RAY_MAX_DISTANCE
+
+        return np.array([
+            obs_joy_x, obs_joy_y, obs_joy_rot,
+            vx_n, vy_n, omega_n,
+            sin_h, cos_h,
+            rx_n, ry_n,
+            *prox,
+        ], dtype=np.float32)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Helpers
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _pos_in_obstacle(self, x: float, y: float) -> bool:
+        r = ROBOT_BUMPER_HALF
+        if x < r or x > FIELD_LENGTH - r:
+            return True
+        if y < r or y > FIELD_WIDTH - r:
+            return True
+        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
+            if ox1 - r < x < ox2 + r and oy1 - r < y < oy2 + r:
+                return True
+        return False
+
+    def _sample_safe_pos(self):
+        """Rejection-sample a robot center not inside any expanded obstacle."""
+        for _ in range(500):
+            x = float(self.np_random.uniform(
+                ROBOT_BUMPER_HALF + 0.1, FIELD_LENGTH - ROBOT_BUMPER_HALF - 0.1
+            ))
+            y = float(self.np_random.uniform(
+                ROBOT_BUMPER_HALF + 0.1, FIELD_WIDTH  - ROBOT_BUMPER_HALF - 0.1
+            ))
+            if not self._pos_in_obstacle(x, y):
+                return x, y
+        # Fallback: field centre (always safe)
+        return FIELD_LENGTH / 2.0, FIELD_WIDTH / 2.0
