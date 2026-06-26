@@ -32,10 +32,11 @@ def discretize(vx: float, vy: float, omega: float, dt: float):
     sin_dt  = math.sin(dtheta)
     cos_m1  = cos_dt - 1.0
 
+    half_theta = dtheta / 2.0
+
     if abs(cos_m1) < 1e-9:
         half_theta_by_tan = 1.0 - (dtheta * dtheta) / 12.0
     else:
-        half_theta = dtheta / 2.0
         half_theta_by_tan = -(half_theta * sin_dt) / cos_m1
 
     corr_angle = math.atan2(-half_theta, half_theta_by_tan)

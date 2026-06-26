@@ -11,7 +11,7 @@
 #   teleop_assist/checkpoints/   model snapshots every CHECKPOINT_FREQ steps
 #   teleop_assist/logs/          rewards CSV for plotting
 #
-# Change device = "cpu" → "cuda" on a machine with a CUDA GPU.
+# Machine: Ryzen 9 9950X (16c/32t) + RTX 5080 16 GB — CUDA 13 / torch 2.12
 # ──────────────────────────────────────────────────────────────────────────────
 
 import os
@@ -19,21 +19,28 @@ import csv
 import argparse
 from datetime import datetime
 
+import numpy as np
 from stable_baselines3 import SAC
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from teleop_assist.env import TeleopAssistEnv
 from lib.field_constants import MAX_SPEED_MPS, MAX_ANGULAR_RPS
 
+# ── Parallelism ────────────────────────────────────────────────────────────────
+# Ryzen 9 9950X has 16 physical cores / 32 threads.
+# 20 SubprocVecEnv workers leaves 12 threads for the training loop + GPU comms.
+N_ENVS = 20
+
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
 TOTAL_TIMESTEPS   = 2_000_000
-CHECKPOINT_FREQ   = 10_000
+CHECKPOINT_FREQ   = 10_000      # total timesteps between checkpoints
 EVAL_FREQ_DEFAULT = 20_000
 LOG_DIR           = "teleop_assist/logs"
 CHECKPOINT_DIR    = "teleop_assist/checkpoints"
 
-# Milestones to print reward breakdowns (subset of RECORD_STEPS in train.py)
 EVAL_STEPS = [
     1_000, 5_000, 10_000, 25_000, 50_000,
     100_000, 200_000, 500_000, 1_000_000, 2_000_000,
@@ -42,45 +49,47 @@ EVAL_STEPS = [
 SAC_KWARGS = dict(
     policy          = "MlpPolicy",
     learning_rate   = 3e-4,
-    buffer_size     = 200_000,
-    learning_starts = 5_000,    # dense reward → can start updating sooner than fuel_scoring
-    batch_size      = 256,
+    buffer_size     = 1_000_000,  # larger buffer for 20-env diversity
+    learning_starts = 5_000,
+    batch_size      = 512,        # larger batches → better RTX 5080 utilisation
     tau             = 0.005,
     gamma           = 0.99,
     train_freq      = 1,
-    gradient_steps  = 1,
+    gradient_steps  = -1,         # auto = n_envs; maintains 1:1 sample-to-gradient ratio
     policy_kwargs   = dict(net_arch=[256, 256]),
     verbose         = 1,
-    device          = "cpu",    # ← change to "cuda" on a CUDA machine
+    device          = "cuda",     # RTX 5080, CUDA 13, 16 GB VRAM
 )
 
 
 # ── Reward logger ──────────────────────────────────────────────────────────────
 
 class RewardLogger(BaseCallback):
-    """Writes (timestep, episode_reward) rows to CSV."""
+    """Writes (timestep, episode_reward) rows to CSV — handles multi-env."""
 
     def __init__(self, log_path: str):
         super().__init__()
-        self._path      = log_path
-        self._ep_reward = 0.0
-        self._f         = None
-        self._writer    = None
+        self._path       = log_path
+        self._ep_rewards = None   # per-env accumulators, shape (n_envs,)
+        self._f          = None
+        self._writer     = None
 
     def _on_training_start(self):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         self._f      = open(self._path, "w", newline="")
         self._writer = csv.writer(self._f)
         self._writer.writerow(["timestep", "episode_reward"])
+        self._ep_rewards = np.zeros(self.training_env.num_envs)
 
     def _on_step(self) -> bool:
-        reward = self.locals.get("rewards", [0])[0]
-        done   = self.locals.get("dones",   [False])[0]
-        self._ep_reward += reward
-        if done:
-            self._writer.writerow([self.num_timesteps, round(self._ep_reward, 4)])
-            self._f.flush()
-            self._ep_reward = 0.0
+        rewards = self.locals.get("rewards", np.zeros(self.training_env.num_envs))
+        dones   = self.locals.get("dones",   np.zeros(self.training_env.num_envs, dtype=bool))
+        self._ep_rewards += rewards
+        for i, done in enumerate(dones):
+            if done:
+                self._writer.writerow([self.num_timesteps, round(float(self._ep_rewards[i]), 4)])
+                self._f.flush()
+                self._ep_rewards[i] = 0.0
         return True
 
     def _on_training_end(self):
@@ -216,10 +225,12 @@ def main():
     reward_csv = os.path.join(LOG_DIR, f"rewards_{timestamp}.csv")
     print(f"Logging rewards to: {reward_csv}")
 
-    env = TeleopAssistEnv()
+    env = make_vec_env(TeleopAssistEnv, n_envs=N_ENVS, vec_env_cls=SubprocVecEnv)
 
+    # CheckpointCallback counts outer steps (each = N_ENVS timesteps),
+    # so divide save_freq to hit CHECKPOINT_FREQ total timesteps between saves.
     checkpoint_cb = CheckpointCallback(
-        save_freq   = CHECKPOINT_FREQ,
+        save_freq   = max(1, CHECKPOINT_FREQ // N_ENVS),
         save_path   = CHECKPOINT_DIR,
         name_prefix = "teleop",
         verbose     = 1,
@@ -240,7 +251,7 @@ def main():
         model = SAC(env=env, **SAC_KWARGS)
 
     print(f"\nStarting teleop-assist training for {args.steps:,} timesteps.")
-    print(f"Device: {SAC_KWARGS['device']}")
+    print(f"Device: {SAC_KWARGS['device']}  |  Parallel envs: {N_ENVS}")
     print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
 
