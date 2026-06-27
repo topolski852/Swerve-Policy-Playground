@@ -24,10 +24,14 @@ STOP_INTENT_PROB      = 0.35   # fraction of reroll periods where true intent is
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
 #
-# Phase 1 (current): joystick following only.
-# Phase 2 (future):  add proximity rays + RW_APPROACH back for obstacle avoidance.
+# Phase 1 (current): explicit match against fromFieldRelativeSpeeds target.
+#   r_match  = RW_MATCH * exp(-RW_MATCH_K * MSE(action, target))
+#   Peaks at RW_MATCH for perfect match, decays toward 0 for large deviation.
+#   Handles both "move" and "stop" cases uniformly — no separate stillness term.
+#
+# Phase 2 (future): add proximity rays + RW_APPROACH for obstacle avoidance.
 
-RW_INTENT           =  1.2    # reward per step for matching joystick direction × magnitude
-RW_SMOOTH           = -0.25   # jerk penalty
-RW_COLLISION        = -50.0   # terminal penalty
-RW_STILL_WHEN_DRIFT = -8.0    # penalty per unit speed when true intent is zero
+RW_MATCH        =  2.0    # peak reward per step for perfect joystick match
+RW_MATCH_K      =  8.0    # exponential decay; MSE of 0.25 → ~27% of peak reward
+RW_SMOOTH       = -0.25   # jerk penalty
+RW_COLLISION    = -50.0   # terminal penalty
