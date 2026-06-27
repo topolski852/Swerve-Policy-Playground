@@ -2,7 +2,7 @@
 verify_env_teleop.py
 Sanity checks for TeleopAssistEnv. No display required.
 Run from the repo root: python verify_env_teleop.py
-Should print 7 PASSes with no errors.
+Should print 10 PASSes with no errors.
 """
 
 import numpy as np
@@ -26,16 +26,15 @@ check("obs within declared bounds",
       np.all(obs <= env.observation_space.high))
 check("action space shape is (3,)",    env.action_space.shape == (3,))
 
-# ── Step with zero action — should not crash ───────────────────────────────────
+# ── Step with zero action — should not crash ──────────────────────────────────
 _, rew, term, trunc, info = env.step(np.zeros(3, dtype=np.float32))
 check("zero action step OK",           not (term or trunc))
 check("info has expected keys",
-      {"r_intent", "r_still", "r_smooth", "joy_mag"}.issubset(info.keys()))
+      {"r_match", "r_still", "r_dir", "r_smooth", "target_mag"}.issubset(info.keys()))
 
 # ── Obs stays in bounds over a random-policy rollout ──────────────────────────
 obs, _ = env.reset()
 in_bounds = True
-episodes  = 0
 for _ in range(5):
     for _ in range(MAX_EPISODE_STEPS + 10):
         action = env.action_space.sample()
@@ -44,54 +43,75 @@ for _ in range(5):
                 np.all(obs <= env.observation_space.high)):
             in_bounds = False
         if term or trunc:
-            episodes += 1
             obs, _ = env.reset()
             break
 check("obs always in bounds during random rollout", in_bounds)
 
 env.close()
 
-# ── Intent reward is positive when action aligns with joystick ────────────────
+# ── r_match is highest for a perfectly aligned action ────────────────────────
 env2 = TeleopAssistEnv()
 obs, _ = env2.reset()
-intent_ok = False
+match_ok = False
 for _ in range(200):
     joy_xy = obs[:2].copy()
     joy_mag = float(np.linalg.norm(joy_xy))
     if joy_mag > DRIFT_FLOOR + 0.05:
-        # Action that exactly matches the observed joystick direction
-        aligned = np.array([joy_xy[0], joy_xy[1], 0.0], dtype=np.float32)
-        _, _, _, _, info = env2.step(aligned)
-        if info.get("r_intent", 0.0) > 0:
-            intent_ok = True
+        # Perfect match: action = observed joystick (true joy + drift ≈ true joy)
+        perfect  = np.array([joy_xy[0], joy_xy[1], 0.0], dtype=np.float32)
+        opposite = np.array([-joy_xy[0], -joy_xy[1], 0.0], dtype=np.float32)
+        _, _, _, _, info_perfect  = env2.step(perfect)
+        _, _, _, _, info_opposite = env2.step(opposite)
+        if (info_perfect.get("r_match", 0.0) > info_opposite.get("r_match", 0.0) and
+                info_perfect.get("r_match", 0.0) > 0):
+            match_ok = True
             break
     obs, _, term, trunc, _ = env2.step(env2.action_space.sample())
     if term or trunc:
         obs, _ = env2.reset()
-check("intent reward > 0 when action aligns with joystick", intent_ok)
+check("r_match higher for aligned action than opposite", match_ok)
 env2.close()
 
-# ── Still penalty fires during a stop-intent period ───────────────────────────
+# ── Direction penalty fires when going opposite to intent ─────────────────────
 env3 = TeleopAssistEnv()
 env3.reset()
-env3._joy_is_stop = True   # force stop-intent period
-_, _, _, _, info = env3.step(np.array([1.0, 0.0, 0.0], dtype=np.float32))
-check("still penalty fires during stop-intent when robot moves",
-      info.get("r_still", 0.0) < 0)
+env3._robot.reset(x=env3._robot.x, y=env3._robot.y, heading=0.0)  # face east
+env3._joy_is_stop = False
+env3._joy_target_x = env3._robot.x + 3.0   # target is east → robot-frame +x
+env3._joy_target_y = env3._robot.y
+env3._joy_speed = 0.8
+env3._joy_reroll_countdown = 999
+# Action [-1, 0, 0] drives west (robot-frame -x) = opposite to intent
+_, _, _, _, info = env3.step(np.array([-1.0, 0.0, 0.0], dtype=np.float32))
+check("r_dir is negative when going opposite to intent",
+      info.get("r_dir", 0.0) < 0)
 env3.close()
 
-# ── Collision terminates episode ───────────────────────────────────────────────
+# ── still penalty fires and r_match peaks when stopped during stop intent ─────
 env4 = TeleopAssistEnv()
 env4.reset()
-# Place the robot near the left wall and drive it straight into the wall
-env4._robot.reset(x=0.35, y=3.0, heading=0.0)
+env4._joy_is_stop = True
+_, _, _, _, info_still  = env4.step(np.zeros(3, dtype=np.float32))
+_, _, _, _, info_moving = env4.step(np.array([1.0, 0.0, 0.0], dtype=np.float32))
+check("r_match higher for zero output than full-speed during stop intent",
+      info_still.get("r_match", 0.0) > info_moving.get("r_match", 0.0))
+check("r_still is zero when not moving during stop intent",
+      info_still.get("r_still", -1.0) == 0.0)
+check("r_still is negative when moving during stop intent",
+      info_moving.get("r_still", 0.0) < 0.0)
+env4.close()
+
+# ── Collision terminates episode ──────────────────────────────────────────────
+env5 = TeleopAssistEnv()
+env5.reset()
+env5._robot.reset(x=0.35, y=3.0, heading=0.0)
 terminated = False
 for _ in range(30):
-    _, rew, term, trunc, _ = env4.step(np.array([-1.0, 0.0, 0.0], dtype=np.float32))
+    _, rew, term, trunc, _ = env5.step(np.array([-1.0, 0.0, 0.0], dtype=np.float32))
     if term:
         terminated = True
         break
 check(f"collision terminates episode (last_rew={rew:.1f})", terminated)
-env4.close()
+env5.close()
 
 print()

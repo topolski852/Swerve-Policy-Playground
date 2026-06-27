@@ -42,7 +42,7 @@ from teleop_assist.constants import (
     DRIFT_MAX, DRIFT_FLOOR,
     JOY_TARGET_REROLL_MIN, JOY_TARGET_REROLL_MAX, JOY_TARGET_ARRIVE_R,
     JOY_SPEED_MIN, JOY_SPEED_MAX, STOP_INTENT_PROB,
-    RW_MATCH, RW_MATCH_K, RW_SMOOTH, RW_COLLISION,
+    RW_MATCH, RW_MATCH_K, RW_DIR_PENALTY, RW_STILL_WHEN_DRIFT, RW_SMOOTH, RW_COLLISION,
 )
 
 OBS_DIM = 10
@@ -245,24 +245,47 @@ class TeleopAssistEnv(gym.Env):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _compute_reward(self, action: np.ndarray):
-        true_joy = self._true_joy_robot()
+        true_joy   = self._true_joy_robot()
+        target_mag = float(np.linalg.norm(true_joy))
+        omega_err  = float(action[2])   # target omega = 0 in Phase 1
 
-        # Target = what ChassisSpeeds.fromFieldRelativeSpeeds() would produce for
-        # this joystick input, expressed in the same [-1,1] normalized action space.
-        # true_joy is already in robot frame at the correct scale, so it IS the target.
-        # Omega target is 0 — rotation is not trained in phase 1.
-        target = np.array([true_joy[0], true_joy[1], 0.0], dtype=np.float32)
+        if target_mag < DRIFT_FLOOR:
+            # Stop intent — every component of action should be zero.
+            # Exponential MSE gives a shaped reward; linear still penalty stacks
+            # on top to provide a much stronger gradient toward exactly zero output.
+            mse     = float(np.mean(action ** 2))
+            r_match = RW_MATCH * math.exp(-RW_MATCH_K * mse)
+            r_still = RW_STILL_WHEN_DRIFT * float(np.linalg.norm(action[:2]))
+            r_dir   = 0.0
+        else:
+            # Moving intent — decompose the xy action into:
+            #   parallel  = component along the target direction (want: == target_mag)
+            #   perp      = component perpendicular to target   (want: == 0)
+            # This separates "right direction, wrong speed" from "wrong direction".
+            t_hat    = true_joy / target_mag
+            parallel = float(np.dot(action[:2], t_hat))
+            perp     = float(action[0] * t_hat[1] - action[1] * t_hat[0])
 
-        mse     = float(np.mean((action - target) ** 2))
-        r_match = RW_MATCH * math.exp(-RW_MATCH_K * mse)
+            # Exponential reward: peaks at perfect match, fast decay on any error.
+            # Dividing by 3 keeps the scale comparable to the 3-component stop case.
+            mse     = ((parallel - target_mag) ** 2 + perp ** 2 + omega_err ** 2) / 3.0
+            r_match = RW_MATCH * math.exp(-RW_MATCH_K * mse)
+
+            # Direction penalty: fires only when parallel < 0 (robot going the
+            # wrong way).  RW_DIR_PENALTY is negative, so this subtracts from reward.
+            # Example: full-speed backwards (parallel=-1) → r_dir = -4.0 * 1.0 = -4.
+            r_dir   = RW_DIR_PENALTY * max(0.0, -parallel)
+            r_still = 0.0
 
         r_smooth = RW_SMOOTH * float(np.linalg.norm(action - self._prev_action))
 
-        reward = r_match + r_smooth
+        reward = r_match + r_still + r_dir + r_smooth
         info = {
-            "r_match":  r_match,
-            "r_smooth": r_smooth,
-            "mse":      mse,
+            "r_match":    r_match,
+            "r_still":    r_still,
+            "r_dir":      r_dir,
+            "r_smooth":   r_smooth,
+            "target_mag": target_mag,
         }
         return reward, info
 

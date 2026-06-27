@@ -126,9 +126,8 @@ class BreakdownLogger(BaseCallback):
         done   = False
 
         totals = {
-            "r_intent": 0.0, "r_still": 0.0,
-            "r_approach": 0.0, "r_smooth": 0.0,
-            "collision": 0,
+            "r_match": 0.0, "r_still": 0.0,
+            "r_dir": 0.0, "r_smooth": 0.0, "collision": 0,
         }
         steps = 0
 
@@ -137,7 +136,7 @@ class BreakdownLogger(BaseCallback):
             obs, _, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             steps += 1
-            for k in ("r_intent", "r_still", "r_approach", "r_smooth"):
+            for k in ("r_match", "r_still", "r_dir", "r_smooth"):
                 totals[k] += info.get(k, 0.0)
             if info.get("collision"):
                 totals["collision"] += 1
@@ -145,8 +144,8 @@ class BreakdownLogger(BaseCallback):
         env.close()
         print(
             f"\n[breakdown @ {self.num_timesteps:>7,}]  steps={steps}  "
-            f"intent={totals['r_intent']:+.1f}  approach={totals['r_approach']:+.1f}  "
-            f"still={totals['r_still']:+.1f}  smooth={totals['r_smooth']:+.1f}  "
+            f"match={totals['r_match']:+.1f}  still={totals['r_still']:+.1f}  "
+            f"dir={totals['r_dir']:+.1f}  smooth={totals['r_smooth']:+.1f}  "
             f"collisions={totals['collision']}"
         )
 

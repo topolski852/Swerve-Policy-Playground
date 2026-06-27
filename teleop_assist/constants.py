@@ -31,7 +31,11 @@ STOP_INTENT_PROB      = 0.35   # fraction of reroll periods where true intent is
 #
 # Phase 2 (future): add proximity rays + RW_APPROACH for obstacle avoidance.
 
-RW_MATCH        =  2.0    # peak reward per step for perfect joystick match
-RW_MATCH_K      =  8.0    # exponential decay; MSE of 0.25 → ~27% of peak reward
-RW_SMOOTH       = -0.25   # jerk penalty
-RW_COLLISION    = -50.0   # terminal penalty
+RW_MATCH            =  2.0    # peak reward per step for perfect joystick match
+RW_MATCH_K          =  8.0    # exponential decay; decomposed MSE of 0.125 → ~37% of peak
+RW_DIR_PENALTY      = -4.0    # penalty per unit of speed in the wrong direction
+                               # opposite full-speed → −4.0×1.0 = −4 (2× worse than missing target)
+RW_STILL_WHEN_DRIFT = -8.0    # linear penalty per unit |action_xy| during stop intent;
+                               # stacks with the MSE exponential to give a strong zero-push
+RW_SMOOTH           = -0.25   # jerk penalty
+RW_COLLISION        = -50.0   # terminal penalty
