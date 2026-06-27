@@ -30,12 +30,13 @@ from lib.field_constants import MAX_SPEED_MPS, MAX_ANGULAR_RPS
 
 # ── Parallelism ────────────────────────────────────────────────────────────────
 # Ryzen 9 9950X has 16 physical cores / 32 threads.
-# 20 SubprocVecEnv workers leaves 12 threads for the training loop + GPU comms.
-N_ENVS = 20
+# 32 SubprocVecEnv workers saturates the physical cores; SubprocVecEnv beats
+# DummyVecEnv by ~35% at this env size (measured in bench_teleop.py).
+N_ENVS = 32
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
-TOTAL_TIMESTEPS   = 2_000_000
+TOTAL_TIMESTEPS   = 5_000_000
 CHECKPOINT_FREQ   = 10_000      # total timesteps between checkpoints
 EVAL_FREQ_DEFAULT = 20_000
 LOG_DIR           = "teleop_assist/logs"
@@ -43,19 +44,26 @@ CHECKPOINT_DIR    = "teleop_assist/checkpoints"
 
 EVAL_STEPS = [
     1_000, 5_000, 10_000, 25_000, 50_000,
-    100_000, 200_000, 500_000, 1_000_000, 2_000_000,
+    100_000, 200_000, 500_000, 1_000_000, 2_000_000, 3_000_000, 5_000_000,
 ]
 
 SAC_KWARGS = dict(
     policy          = "MlpPolicy",
     learning_rate   = 3e-4,
-    buffer_size     = 1_000_000,  # larger buffer for 20-env diversity
+    buffer_size     = 1_000_000,
     learning_starts = 5_000,
-    batch_size      = 512,        # larger batches → better RTX 5080 utilisation
+    # batch_size=4096 is nearly free vs 512 — GPU is underutilised per step;
+    # the bottleneck is CPU-side SB3 Python overhead, not GPU compute.
+    batch_size      = 4096,
     tau             = 0.005,
     gamma           = 0.99,
     train_freq      = 1,
-    gradient_steps  = -1,         # auto = n_envs; maintains 1:1 sample-to-gradient ratio
+    # gradient_steps=8 (not -1=32) — 8 updates per outer step instead of 32.
+    # Each step costs ~47ms of CPU overhead regardless of batch size, so doing
+    # 32 steps per outer step (940ms) is what made the last run take 2h50m.
+    # 8 steps × 47ms = 376ms/outer-step. With batch_size 8× larger the total
+    # sample exposure is similar; fewer steps = ~4× faster wall-clock.
+    gradient_steps  = 4,
     policy_kwargs   = dict(net_arch=[256, 256]),
     verbose         = 1,
     device          = "cuda",     # RTX 5080, CUDA 13, 16 GB VRAM
@@ -227,8 +235,8 @@ def main():
 
     env = make_vec_env(TeleopAssistEnv, n_envs=N_ENVS, vec_env_cls=SubprocVecEnv)
 
-    # CheckpointCallback counts outer steps (each = N_ENVS timesteps),
-    # so divide save_freq to hit CHECKPOINT_FREQ total timesteps between saves.
+    # CheckpointCallback counts outer steps, so divide by N_ENVS to hit
+    # CHECKPOINT_FREQ total timesteps between saves.
     checkpoint_cb = CheckpointCallback(
         save_freq   = max(1, CHECKPOINT_FREQ // N_ENVS),
         save_path   = CHECKPOINT_DIR,

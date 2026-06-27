@@ -24,11 +24,7 @@ import pygame
 from stable_baselines3 import SAC
 
 from teleop_assist.env import TeleopAssistEnv
-from teleop_assist.constants import RAY_MAX_DISTANCE, DANGER_ZONE_NORM
 from lib.renderer import Renderer
-
-RAY_LABELS = ["F", "FL", "L", "BL", "B", "BR", "R", "FR"]
-DANGER_DIST = DANGER_ZONE_NORM * RAY_MAX_DISTANCE   # 2.0 m
 
 
 def main():
@@ -67,25 +63,16 @@ def main():
             done = terminated or truncated
             step += 1
 
-            # Build compact ray string — "!" prefix = inside danger zone
-            rays = env._ray_distances
-            ray_str = " ".join(
-                f"{'!' if rays[i] < DANGER_DIST else ' '}{RAY_LABELS[i]}:{rays[i]:.1f}"
-                for i in range(8)
-            )
-
             out_mag = float(np.linalg.norm(action[:2]))
 
             hud = {
-                "step":       step,
-                "ep_reward":  round(ep_reward, 1),
-                "joy":        round(info.get("joy_mag", 0.0), 2),
-                "out":        round(out_mag, 2),
-                "r_intent":   round(info.get("r_intent",   0.0), 3),
-                "r_approach": round(info.get("r_approach", 0.0), 3),
-                "r_still":    round(info.get("r_still",    0.0), 3),
-                "r_smooth":   round(info.get("r_smooth",   0.0), 3),
-                "rays":       ray_str,
+                "step":      step,
+                "ep_reward": round(ep_reward, 1),
+                "joy":       round(info.get("joy_mag", 0.0), 2),
+                "out":       round(out_mag, 2),
+                "r_intent":  round(info.get("r_intent", 0.0), 3),
+                "r_still":   round(info.get("r_still",  0.0), 3),
+                "r_smooth":  round(info.get("r_smooth", 0.0), 3),
             }
 
             renderer.draw(env._robot, None, env._robot.module_states, info=hud)
