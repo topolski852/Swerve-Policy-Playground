@@ -72,6 +72,22 @@ python verify_env_scoring.py   # should show 7 PASSes
 python train_scoring.py --render-capture
 ```
 
+## NT bridge (teleop-assist policy → 1507Labs sim)
+
+NT bridge uses `ntcore` which ships with `robotpy` (already installed as `pyntcore`).
+No additional install needed.
+
+Run order:
+1. `./gradlew simulateJava` in 1507Labs (starts the robot sim + NT server on 127.0.0.1)
+2. `python -m teleop_assist.nt_bridge` from this directory
+3. Open AdvantageScope, connect to `127.0.0.1`
+4. Press **Right Bumper** in the sim to enable policy assist
+
+For real robot (once SystemCore ships):
+```bash
+python -m teleop_assist.nt_bridge --host 10.15.7.2
+```
+
 Change `device = "cpu"` → `device = "cuda"` in `train_scoring.py` before running on a CUDA machine.
 
 **CUDA note**: `torch>=2.8` dropped Pascal (CC 6.1) support. Pin `torch==2.7.1+cu118` + `stable-baselines3==2.8.0` on this machine. Do NOT run `pip install --upgrade` without re-pinning torch.

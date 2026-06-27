@@ -40,4 +40,4 @@ RW_INTENT           =  1.2    # reward per step for matching joystick direction 
 RW_APPROACH         = -4.0    # penalty scaling for moving toward a nearby obstacle
 RW_SMOOTH           = -0.25   # jerk penalty — borrowed from PRT RW_SMOOTH_VEL
 RW_COLLISION        = -50.0   # terminal penalty — larger than PRT -25 (safety-critical)
-RW_STILL_WHEN_DRIFT = -0.8    # penalty per unit speed when true intent is zero
+RW_STILL_WHEN_DRIFT = -2.5    # penalty per unit speed when true intent is zero
