@@ -1,0 +1,17 @@
+# Swerve Policy Playground — Python dependencies (2027 season)
+#
+# torch is NOT listed here because the right build depends on the machine:
+#   Laptop / CPU only:
+#     pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   Gaming PC (GTX 1050 Ti, Pascal CC 6.1) — newer CUDA builds dropped Pascal:
+#     pip install "torch==2.7.1+cu118" --index-url https://download.pytorch.org/whl/cu118 --no-deps
+#
+# Then:  pip install -r requirements.txt
+
+stable-baselines3>=2.8,<3
+gymnasium
+numpy
+pygame
+imageio[ffmpeg]
+matplotlib
+pyntcore>=2025.3.2    # NT bridge only (teleop_assist/nt_bridge.py)

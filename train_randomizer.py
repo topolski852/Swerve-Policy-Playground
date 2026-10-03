@@ -38,10 +38,14 @@ CHECKPOINT_DIR    = "path_randomizer/checkpoints"
 RECORDINGS_DIR    = "path_randomizer/recordings"
 
 
+# Same milestones as train.py so path_following and randomizer clips line up side by side.
 RECORD_STEPS = [
-    500, 1_000, 2_000, 5_000, 10_000,
-    25_000, 50_000, 100_000, 200_000,
-    500_000, 1_000_000, 2_000_000,
+    500, 1_000, 2_000,
+    5_000, 8_000, 12_000,
+    18_000, 25_000, 35_000, 50_000,
+    75_000, 100_000, 150_000,
+    200_000, 300_000, 500_000,
+    1_000_000, 2_000_000,
 ]
 
 SAC_KWARGS = dict(

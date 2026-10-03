@@ -5,6 +5,11 @@ FRC 2026 robot policy trainer using Stable-Baselines3 SAC + custom Gymnasium env
 Long-term goal: Electron desktop app where students tune reward weights and run experiments.
 Even longer-term: 6-robot multi-agent match simulation.
 
+**Season target: 2027 (SystemCore).** Single branch: `main` (no SystemCore branch, since this repo is only
+used for 2027). Opens in WPILib VS Code 2027 as a plain Python workspace (`.venv` + `requirements.txt`).
+Trained policies feed 1507Base's SystemCore branch (`Driver.POLICY` / `AutoBuilder.policyDriver`),
+developed and tested first in 1507Labs.
+
 ## Repo structure
 ```
 train.py                  # path_following trainer (run from root)
@@ -65,9 +70,12 @@ fuel_scoring/             # experiment 2: fuel collect/score loop (active)
 
 ```bash
 git clone <repo>
-pip install "stable-baselines3==2.8.0" gymnasium pygame numpy imageio
-# GTX 1050 Ti (Pascal CC 6.1) requires cu118 — newer CUDA builds dropped Pascal support:
+python -m venv .venv && .venv\Scripts\activate
+# torch first. Laptop/CPU:
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+# ...or GTX 1050 Ti (Pascal CC 6.1) requires cu118 — newer CUDA builds dropped Pascal support:
 pip install "torch==2.7.1+cu118" --index-url https://download.pytorch.org/whl/cu118 --no-deps
+pip install -r requirements.txt
 python verify_env_scoring.py   # should show 7 PASSes
 python train_scoring.py --render-capture
 ```

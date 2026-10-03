@@ -23,17 +23,27 @@ The repo contains four progressive experiments, each building on the last:
 
 ## Quick Start
 
+This repo targets the **2027 (SystemCore) season**. Open the folder in **WPILib VS Code 2027**.
+It's a plain Python project with no Gradle build, so the only extension it needs is Python
+(`ms-python.python`), which VS Code will suggest. The committed `.vscode/settings.json` points VS Code at `.venv`.
+
 ### Install dependencies
 ```bash
-pip install "stable-baselines3==2.8.0" gymnasium pygame numpy imageio
-```
+python -m venv .venv
+.venv\Scripts\activate            # Windows (VS Code terminals activate it automatically)
 
-For GPU training on a Pascal-era card (GTX 1050 Ti / CC 6.1):
-```bash
-pip install "torch==2.7.1+cu118" --index-url https://download.pytorch.org/whl/cu118 --no-deps
+# 1. torch: pick ONE
+pip install torch --index-url https://download.pytorch.org/whl/cpu                                   # laptop / CPU
+pip install "torch==2.7.1+cu118" --index-url https://download.pytorch.org/whl/cu118 --no-deps       # GTX 1050 Ti
+
+# 2. everything else
+pip install -r requirements.txt
 ```
 
 > **Note:** `torch>=2.8` dropped Pascal (CC 6.1) support. Pin `torch==2.7.1+cu118` on Pascal hardware.
+
+> **Packages already installed globally?** `python -m venv --system-site-packages .venv` reuses them
+> (no download needed).
 
 ### Train a policy
 
