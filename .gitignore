@@ -24,3 +24,9 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+
+# Presentation build outputs (rebuild with prep_media.py + build_deck.js)
+presentation/node_modules/
+presentation/media/
+presentation/*.pptx
+presentation/package-lock.json
