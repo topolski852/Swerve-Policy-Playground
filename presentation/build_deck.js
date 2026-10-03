@@ -361,12 +361,15 @@ async function build() {
 
   // 9 ─ Chapter 1 videos
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 1: Empty field" });
-  s.addText("From clueless to perfect in 12,000 steps", { placeholder: "title" });
+  s.addText("Wander, figure it out, optimize", { placeholder: "title" });
   {
     const clips = [
-      { key: "ch1_500", head: "500 steps", score: -202, txt: "Drives off the path and gives up after 5 seconds." },
-      { key: "ch1_8k", head: "8,000 steps", score: -297, txt: "Wanders for the full 30 seconds and never finishes." },
-      { key: "ch1_12k", head: "12,000 steps", score: 271, txt: "Drives the whole loop in about 6 seconds!" },
+      { key: "ch1_500", head: "1. Wander", steps: "500 steps", score: -202,
+        txt: "No idea what earns points yet. It drifts off and the attempt ends." },
+      { key: "ch1_8k", head: "2. Figure it out", steps: "8,000 steps", score: -297,
+        txt: "Reaches 9 of 14 waypoints, but pauses at each one: is the next one worth it?" },
+      { key: "ch1_12k", head: "3. Optimize", steps: "12,000 steps", score: 271,
+        txt: "Knows the whole path. Now it gets faster: a full loop in about 6 seconds." },
     ];
     const vw = 3.85, gap = 0.3, y = 1.6;
     for (let i = 0; i < clips.length; i++) {
@@ -375,19 +378,20 @@ async function build() {
       s.addText(c.head, { x, y: y + h + 0.25, w: vw, h: 0.45, isTextBox: true, fontSize: 22, bold: true,
         color: C.accent1, margin: 0 });
       caption(s, x, y + h + 0.75, vw, [
-        { text: "Score: " }, scoreRun(c.score), { text: "", options: { breakLine: true } },
+        { text: c.steps + "  ·  Score: ", options: { bold: true, color: C.background1 } }, scoreRun(c.score),
+        { text: "", options: { breakLine: true } },
         { text: c.txt },
-      ], c.head + " caption", 1.4);
+      ], c.head + " caption", 1.0);
     }
     s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: M, y: 5.55, w: W - 2 * M, h: 1.1, rectRadius: 0.12,
       fill: { color: HEX.dk2 }, line: { color: HEX.accent1, width: 1.5 }, objectName: "takeaway outline" });
     s.addText([
-      { text: "The first 10,000 steps are exploring: ", options: { bold: true, color: C.background1 } },
-      { text: "random moves on purpose, so it can discover what earns points. Then it “gets it” almost all at once." },
+      { text: "Standing still costs points every second. ", options: { bold: true, color: C.background1 } },
+      { text: "Each time it pauses at a waypoint, that cost nudges it on to the next one, until it learns the whole path." },
     ], { x: M + 0.35, y: 5.55, w: W - 2 * M - 0.7, h: 1.1, isTextBox: true, fontSize: 17,
       color: C.background2, valign: "middle", margin: 0 });
   }
-  s.addNotes("Play them left to right. Before about 10,000 steps the robot is just trying random things (that's on purpose: it has to explore first). Then something clicks.");
+  s.addNotes("Play them left to right. Stage 1, wander: early on it is trying random moves on purpose, exploring to find out what earns points. Stage 2, figure it out: it has learned that waypoints are good and drives to them, but after each one it hesitates, unsure whether moving on is worth it or whether it should stay put. Staying still keeps costing points, so it keeps getting pushed toward the next waypoint. It reached 9 of 14 before time ran out. Fun question for students: why is the 8,000-step score (−297) LOWER than the 500-step score (−202) even though it got much further? Because it survived the whole 30 seconds paying the 'every second' cost, while the 500-step attempt ended early. Stage 3, optimize: it knows the whole path, and from here on training just makes it faster and smoother.");
 
   // 10 ─ Chapter 1 chart + how the score worked
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 1: Empty field" });
