@@ -18,6 +18,7 @@ import sys
 import pygame
 from stable_baselines3 import SAC
 from path_randomizer.swerve_env import SwerveEnv
+from train_randomizer import episode_outcome
 
 DEFAULT_CHECKPOINT = "path_randomizer/checkpoints/randomizer_final.zip"
 
@@ -115,7 +116,7 @@ def main():
             model, env, renderer, ep, deterministic
         )
 
-        result = "COMPLETE" if completed else "TIMEOUT "
+        result = f"{episode_outcome(env, completed, steps):8s}"
         wp_done = env._tracker.current_idx - 1   # -1 because index 0 is the spawn point
         wp_total = len(env._waypoints) - 1
         print(f"  Ep {ep:3d}: {result}  steps={steps:4d}  "

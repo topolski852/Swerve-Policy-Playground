@@ -26,6 +26,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from path_randomizer.swerve_env import SwerveEnv
+from path_randomizer.constants import MAX_EPISODE_STEPS
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
@@ -63,6 +64,16 @@ SAC_KWARGS = dict(
     device          = "cpu",
 )
 
+
+
+def episode_outcome(env, terminated, steps):
+    """Label how an eval episode ended. truncated covers both a crash and the
+    3000-step time limit, so check the robot itself rather than the flags."""
+    if terminated:
+        return "COMPLETE"
+    if env._check_collision():
+        return "CRASH"
+    return "TIMEOUT" if steps >= MAX_EPISODE_STEPS else "STOPPED"
 
 
 # ── Render-eval callback ───────────────────────────────────────────────────────
@@ -122,7 +133,7 @@ class RenderEvalCallback(BaseCallback):
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
-        status = "COMPLETE" if terminated else ("QUIT" if step == 0 else "TIMEOUT")
+        status = episode_outcome(env, terminated, step)
         print(f"  {status}  steps={step}  reward={ep_reward:.2f}  "
               f"waypoints={env._tracker.current_idx}/{len(env._waypoints)}")
 
@@ -189,7 +200,7 @@ class RecordEvalCallback(BaseCallback):
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
-        status = "COMPLETE" if terminated else "TIMEOUT"
+        status = episode_outcome(env, terminated, step)
         print(f"  {status}  frames={step}  reward={ep_reward:.2f}  saved: {path}")
 
         renderer.close()
