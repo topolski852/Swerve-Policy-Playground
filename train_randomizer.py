@@ -67,12 +67,12 @@ SAC_KWARGS = dict(
 
 
 def episode_outcome(env, terminated, steps):
-    """Label how an eval episode ended. truncated covers both a crash and the
-    3000-step time limit, so check the robot itself rather than the flags."""
-    if terminated:
-        return "COMPLETE"
+    """Label how an eval episode ended. terminated covers both finishing and
+    crashing, so check the robot itself rather than the flags."""
     if env._check_collision():
         return "CRASH"
+    if terminated:
+        return "COMPLETE"
     return "TIMEOUT" if steps >= MAX_EPISODE_STEPS else "STOPPED"
 
 

@@ -38,7 +38,7 @@ for _ in range(max_eps):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         ep_reward += reward
-        if terminated:
+        if env._tracker.done:   # terminated is also True on a crash
             completed += 1
         if terminated or truncated:
             rewards.append(ep_reward)

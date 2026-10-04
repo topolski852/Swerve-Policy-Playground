@@ -204,9 +204,13 @@ class SwerveEnv(gym.Env):
         )
 
         # ── Termination ───────────────────────────────────────────────────────
+        # A crash is a real ending (terminated), not a time limit (truncated).
+        # SB3 treats truncated as "the episode was cut short, the future would
+        # have continued" and adds the critic's guess of that future to the
+        # crash penalty, so the agent never learned how bad a crash really is.
         collision  = self._check_collision()
-        terminated = goal_done
-        truncated  = (self._step_count >= MAX_EPISODE_STEPS) or collision
+        terminated = goal_done or collision
+        truncated  = (self._step_count >= MAX_EPISODE_STEPS) and not terminated
 
         if collision:
             reward += RW_COLLISION_PENALTY
