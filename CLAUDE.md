@@ -14,10 +14,30 @@ developed and tested first in 1507Labs.
 ```
 train.py                  # path_following trainer (run from root)
 train_scoring.py          # fuel scoring trainer (run from root)
+train_randomizer.py       # path_randomizer trainer (run from root)
 lib/                      # shared: kinematics, renderer, field constants
 path_following/           # experiment 1: figure-8 path navigation
-fuel_scoring/             # experiment 2: fuel collect/score loop (active)
+fuel_scoring/             # experiment 2: fuel collect/score loop
+path_randomizer/          # random waypoint chains -> 1507Base Driver.POLICY (active)
 ```
+
+## Active experiment: path_randomizer
+
+Becomes `Driver.POLICY` / `AutoBuilder.policyDriver` in 1507Base (SystemCore), tested first in 1507Labs.
+Sim matches 1507Base where it can: 5.04 m/s, `lib/accel_limiter.py` (port of `SwerveAccelLimiter`,
+slip 15 / torque 10 m/s²), 0.40 m pass radius (`kAuto.Accuracy.NORMAL`), give up on a node after 5 s
+(`kAuto.MAX_SECONDS_PER_NODE`). Translation only; rotation and per-node accuracy come later.
+
+- **Obs (16):** vx, vy (÷5.04), x, y (÷field), current/next node vector (÷6 m, length ≤ 1), 8 rays
+  (`path_randomizer/rays.py`: clearance to field-element polygons/walls, ÷2 m). Java must match rays.py's header formula.
+- **Reward:** 2.0 × m closer + 0.8 × velocity toward node / vmax per step, +100 per node, +75 all done,
+  −0.03/step, crash −10 and `terminated` (never `truncated`: SB3 bootstraps past truncation).
+- **Curriculum:** `CURRICULUM` in constants.py; promote at 75% complete over 100 episodes; `--stage N` to resume.
+- **Run:** `.\.venv\Scripts\python.exe -u train_randomizer.py --render-capture --n-envs 2 --steps N`.
+  Checkpoint names repeat every run: move old ones into `path_randomizer/checkpoints/run_<date>/` first.
+- **History:** the 2026-06 and 2026-10-03 runs never learned (0.1–0.2 nodes/episode). Causes and fixes are in
+  the 2026-10-04 commits (obs scale, 60 s episodes, crash-as-truncated, crash −75, no curriculum).
+  After the fixes, 100k steps → ~90% complete on stage 0 and 60–80% on stage 1.
 
 ## Active experiment: fuel_scoring
 
@@ -103,5 +123,8 @@ Change `device = "cpu"` → `device = "cuda"` in `train_scoring.py` before runni
 **SubprocVecEnv target**: 4 parallel envs on i7-6700K (leaves headroom for GPU-side training loop).
 
 ## Next planned work
+- path_randomizer: Java side in 1507Base (one `RouteDriver` class: rays from `Nodes.FieldElements.CORNERS` + MLP
+  forward pass), check it in the 1507Labs sim with AdvantageScope, then rotation and per-node accuracy
+- path_randomizer: randomized obstacles in training so the policy carries to the 2027 field
 - SubprocVecEnv: parallel environments (4-8 envs on PC, 100 on future dev box)
 - Phase 3: enable omega (rotation), robot must face hub to score

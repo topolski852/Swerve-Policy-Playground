@@ -15,7 +15,7 @@ The repo contains four progressive experiments, each building on the last:
 | Experiment | Folder | Description |
 |---|---|---|
 | Path Following | `path_following/` | Fixed figure-8 path around both Alliance Hubs — the original demo |
-| Path Randomizer | `path_randomizer/` | Random waypoint chains (3–12 points) anywhere on the full field |
+| Path Randomizer | `path_randomizer/` | Random waypoint chains (up to 12 points) anywhere on the field; becomes 1507Base's `Driver.POLICY` |
 | Fuel Scoring | `fuel_scoring/` | Collect fuel in the neutral zone, return to score it at the hub |
 | Teleop Assist | `teleop_assist/` | Policy learns to mirror driver joystick input while avoiding collisions |
 
@@ -96,7 +96,13 @@ The original demo. A fixed figure-8 arc-length parameterized path loops around b
 
 ### Path Randomizer (`path_randomizer/`)
 
-Each episode generates a fresh chain of 3–12 waypoints placed randomly across the field (1–6 m apart). The agent must navigate all of them in order. A monotone approach-progress reward prevents the agent from farming reward by oscillating near a waypoint.
+Each episode generates a fresh chain of waypoints placed randomly on the field. The agent must reach them in order (within 0.40 m), giving up on any node it can't reach in 5 s. The trained policy becomes the `Driver.POLICY` route driver in 1507Base, so the sim robot uses 1507Base's numbers: 5.04 m/s top speed and a port of its `SwerveAccelLimiter` (`lib/accel_limiter.py`).
+
+- **Observation (16):** velocity, position, vectors to the current and next node (÷ 6 m), and 8 distance rays: how far the robot can drive in each direction before it hits a field element or wall (`path_randomizer/rays.py`, works on any polygon).
+- **Reward:** metres of progress toward the node + velocity pointed at it each step, +100 per node, +75 for finishing, −10 for a crash (which also ends the episode).
+- **Curriculum:** starts with 1–3 nodes up to 3 m apart on clear legs and moves up a stage when 75% of recent episodes finish; the last stage is 3–12 nodes 0.5–6 m apart, including legs the robot must steer around a hub or trench. `test_randomizer.py --phase N` tests on stage N.
+
+The commit history explains each design choice; the 2026-10 commits record why the first version never learned.
 
 ### Fuel Scoring (`fuel_scoring/`)
 
