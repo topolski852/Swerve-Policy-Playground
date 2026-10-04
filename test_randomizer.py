@@ -4,7 +4,7 @@
 #
 # Usage:
 #   python test_randomizer.py                        # final model, Phase 6, 10 episodes
-#   python test_randomizer.py --phase 3              # test at Phase 3 difficulty
+#   python test_randomizer.py --phase 1              # test on curriculum stage 1 (easiest)
 #   python test_randomizer.py --n-episodes 25
 #   python test_randomizer.py --checkpoint path_randomizer/checkpoints/randomizer_500000_steps.zip
 #   python test_randomizer.py --stochastic           # stochastic policy instead of deterministic
@@ -22,13 +22,9 @@ from train_randomizer import episode_outcome
 
 DEFAULT_CHECKPOINT = "path_randomizer/checkpoints/randomizer_final.zip"
 
-# Diagnostic difficulty levels for testing — not curriculum phases.
-# Training uses level 3 (full difficulty) throughout.
-PHASE_SETTINGS = {
-    1: dict(_n_waypoints_min=3, _n_waypoints_max=5,  _wp_distance_max=2.0),  # easy
-    2: dict(_n_waypoints_min=3, _n_waypoints_max=8,  _wp_distance_max=4.0),  # medium
-    3: dict(_n_waypoints_min=3, _n_waypoints_max=12, _wp_distance_max=6.0),  # full (training distribution)
-}
+# --phase picks a training curriculum stage (1 = easiest). The last is the full
+# training distribution.
+from path_randomizer.constants import CURRICULUM
 
 
 def run_episode(model, env, renderer, episode_num, deterministic):
@@ -81,20 +77,20 @@ def main():
                         help=f"model zip to load (default: {DEFAULT_CHECKPOINT})")
     parser.add_argument("--n-episodes",  type=int,  default=10,
                         help="number of episodes to run (default: 10)")
-    parser.add_argument("--phase",       type=int,  default=3, choices=[1, 2, 3],
-                        help="difficulty: 1=easy, 2=medium, 3=full/training (default: 3)")
+    parser.add_argument("--phase",       type=int,  default=len(CURRICULUM),
+                        choices=range(1, len(CURRICULUM) + 1),
+                        help=f"curriculum stage 1-{len(CURRICULUM)}; {len(CURRICULUM)} = full (default)")
     parser.add_argument("--stochastic",  action="store_true",
                         help="use stochastic policy (default: deterministic)")
     args = parser.parse_args()
 
     deterministic = not args.stochastic
-    settings      = PHASE_SETTINGS[args.phase]
+    settings      = CURRICULUM[args.phase - 1]
 
     print(f"Checkpoint : {args.checkpoint}")
-    difficulty = {1: "easy", 2: "medium", 3: "full (training distribution)"}
-    print(f"Difficulty : {args.phase} ({difficulty[args.phase]})  —  "
-          f"{settings['_n_waypoints_min']}–{settings['_n_waypoints_max']} waypoints, "
-          f"max {settings['_wp_distance_max']} m apart")
+    print(f"Difficulty : stage {args.phase} of {len(CURRICULUM)}  —  "
+          f"{settings['n_min']}–{settings['n_max']} waypoints, max {settings['max_dist']} m apart, "
+          f"{'clear legs only' if settings['clear_legs'] else 'legs may cross field elements'}")
     print(f"Policy     : {'deterministic' if deterministic else 'stochastic'}")
     print(f"Episodes   : {args.n_episodes}")
     print()
@@ -102,8 +98,7 @@ def main():
     model = SAC.load(args.checkpoint, device="cpu")
 
     env = SwerveEnv()
-    for k, v in settings.items():
-        setattr(env, k, v)
+    env.set_stage(args.phase - 1)
 
     from lib.renderer import Renderer
     renderer = Renderer(waypoints=None)

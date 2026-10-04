@@ -26,7 +26,7 @@ from lib.field_constants import (
 )
 from path_randomizer.constants import (
     ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
-    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, NODE_TIME_LIMIT_STEPS,
+    NODE_TIME_LIMIT_STEPS, CURRICULUM,
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
     RW_PROGRESS, RW_VEL_ALIGN, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
@@ -52,6 +52,32 @@ def goal_vector(rx, ry, wx, wy):
     if n > 1.0:
         dx, dy = dx / n, dy / n
     return float(dx), float(dy)
+
+
+def leg_clear(ax, ay, bx, by):
+    """True if the robot can drive the straight line A->B without touching a
+    field element (each element grown by the bumper half-width; slab test)."""
+    r = ROBOT_BUMPER_HALF
+    dx, dy = bx - ax, by - ay
+    for ox1, oy1, ox2, oy2 in IMPASSABLE_RECTS:
+        t0, t1 = 0.0, 1.0
+        hit = True
+        for lo, hi, p, d in ((ox1 - r, ox2 + r, ax, dx), (oy1 - r, oy2 + r, ay, dy)):
+            if abs(d) < 1e-12:
+                if p <= lo or p >= hi:
+                    hit = False
+                    break
+            else:
+                ta, tb = (lo - p) / d, (hi - p) / d
+                if ta > tb:
+                    ta, tb = tb, ta
+                t0, t1 = max(t0, ta), min(t1, tb)
+                if t0 >= t1:
+                    hit = False
+                    break
+        if hit:
+            return False
+    return True
 
 
 class WaypointTracker:
@@ -114,11 +140,9 @@ class SwerveEnv(gym.Env):
         self._step_count = 0
         self._renderer   = None
 
-        # Configurable difficulty — defaults to full training values.
-        # test_randomizer.py may override these via setattr for diagnostic runs.
-        self._n_waypoints_min = N_WAYPOINTS_MIN
-        self._n_waypoints_max = N_WAYPOINTS_MAX
-        self._wp_distance_max = MAX_WAYPOINT_DISTANCE
+        # Difficulty: a CURRICULUM stage. Defaults to the last (full) stage;
+        # train_randomizer.py starts at 0 and moves up with set_stage().
+        self.set_stage(len(CURRICULUM) - 1)
 
         # Distance to the current node last step, for the progress reward.
         self._prev_dist = 0.0
@@ -134,13 +158,14 @@ class SwerveEnv(gym.Env):
         self._robot.reset(x=sx, y=sy, heading=0.0)
         self._limiter.reset()
 
-        n = int(self.np_random.integers(self._n_waypoints_min, self._n_waypoints_max + 1))
-        # Chain each waypoint within _wp_distance_max of the previous so
+        st = CURRICULUM[self.stage]
+        n  = int(self.np_random.integers(st["n_min"], st["n_max"] + 1))
+        # Chain each waypoint within max_dist of the previous so
         # the agent never has to cross the full field in one hop.
         nav_wps = []
         prev_x, prev_y = sx, sy
         for _ in range(n):
-            wx, wy = self._random_pos_near(prev_x, prev_y, self._wp_distance_max)
+            wx, wy = self._random_pos_near(prev_x, prev_y, st["max_dist"], st["clear_legs"])
             nav_wps.append((wx, wy))
             prev_x, prev_y = wx, wy
 
@@ -226,7 +251,11 @@ class SwerveEnv(gym.Env):
         info = {
             "waypoint_idx": self._tracker.current_idx,
             "n_waypoints":  len(self._waypoints),
+            "stage":        self.stage,
         }
+        if terminated or truncated:
+            info["outcome"] = ("crash" if collision else
+                               "complete" if goal_done else "timeout")
 
         if self.render_mode == "human":
             self.render()
@@ -248,6 +277,10 @@ class SwerveEnv(gym.Env):
     # ──────────────────────────────────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────────────────────────────────
+
+    def set_stage(self, stage):
+        """Pick the CURRICULUM stage used from the next reset() on."""
+        self.stage = int(stage)
 
     def _dist_to_node(self):
         if self._tracker.done:
@@ -290,19 +323,23 @@ class SwerveEnv(gym.Env):
                 return x, y
         return FIELD_LENGTH / 2, FIELD_WIDTH / 2  # fallback: midfield
 
-    def _random_pos_near(self, cx, cy, max_dist):
-        """Random valid position within max_dist metres of (cx, cy)."""
+    def _random_pos_near(self, cx, cy, max_dist, clear_leg=False):
+        """Random valid position within max_dist metres of (cx, cy). With
+        clear_leg, the straight line from (cx, cy) must also miss every field
+        element (falls back to allowing a blocked leg if none is found)."""
         r = ROBOT_BUMPER_HALF
         pad = r + 0.1
-        for _ in range(200):
+        for attempt in range(400):
             angle = float(self.np_random.uniform(0.0, 2.0 * math.pi))
             dist  = float(self.np_random.uniform(MIN_WAYPOINT_DISTANCE, max_dist))
             x = cx + dist * math.cos(angle)
             y = cy + dist * math.sin(angle)
             if x < pad or x > FIELD_LENGTH - pad: continue
             if y < pad or y > FIELD_WIDTH  - pad: continue
-            if self._pos_valid(x, y, r):
-                return x, y
+            if not self._pos_valid(x, y, r): continue
+            if clear_leg and attempt < 200 and not leg_clear(cx, cy, x, y):
+                continue
+            return x, y
         return self._random_valid_pos()  # fallback: unconstrained random
 
     def _pos_valid(self, x, y, r):

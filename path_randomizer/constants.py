@@ -30,6 +30,21 @@ MAX_WAYPOINT_DISTANCE = 6.0   # metres
 MIN_WAYPOINT_DISTANCE = 0.5   # metres — floor so the robot must physically move between points
                                # (must exceed PASS_RADIUS)
 
+# ── Curriculum ─────────────────────────────────────────────────────────────────
+# Start with short, clear legs (like path_following's single path) and move to
+# the full random problem once the robot is good at the easy one. Starting at
+# full difficulty, the robot crashed or got lost so often it rarely saw an
+# arrival to learn from. The last stage is the real training distribution.
+#   clear_legs: every straight leg between nodes stays clear of field elements
+#               (later stages include legs the robot must steer around)
+CURRICULUM = [
+    dict(n_min=1, n_max=3,  max_dist=3.0, clear_legs=True),
+    dict(n_min=2, n_max=6,  max_dist=4.5, clear_legs=True),
+    dict(n_min=N_WAYPOINTS_MIN, n_max=N_WAYPOINTS_MAX, max_dist=MAX_WAYPOINT_DISTANCE, clear_legs=False),
+]
+PROMOTE_COMPLETE_RATE = 0.75  # move up a stage once this share of recent episodes finish
+PROMOTE_WINDOW        = 100   # ...measured over this many episodes
+
 # ── Reward weights ─────────────────────────────────────────────────────────────
 
 # Every step, two small rewards tell the robot whether it is heading the right way

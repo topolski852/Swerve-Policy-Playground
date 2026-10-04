@@ -27,8 +27,8 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from path_randomizer.swerve_env import SwerveEnv
 from path_randomizer.constants import (
-    NODE_TIME_LIMIT_STEPS, N_WAYPOINTS_MIN, N_WAYPOINTS_MAX,
-    MIN_WAYPOINT_DISTANCE, MAX_WAYPOINT_DISTANCE,
+    NODE_TIME_LIMIT_STEPS, MIN_WAYPOINT_DISTANCE,
+    CURRICULUM, PROMOTE_COMPLETE_RATE, PROMOTE_WINDOW,
 )
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
@@ -81,15 +81,53 @@ def episode_outcome(env):
     return "STOPPED"
 
 
+# ── Curriculum callback ───────────────────────────────────────────────────────
+
+class CurriculumCallback(BaseCallback):
+    """Moves every training env up one CURRICULUM stage once
+    PROMOTE_COMPLETE_RATE of the last PROMOTE_WINDOW episodes finished.
+    Never moves back down. Logs the stage and outcome rates to TensorBoard/console."""
+
+    def __init__(self, start_stage=0):
+        super().__init__()
+        self.stage    = start_stage
+        self._recent  = []   # outcome strings, newest last
+
+    def _on_training_start(self):
+        self.training_env.env_method("set_stage", self.stage)
+        print(f"Curriculum: starting at stage {self.stage} {CURRICULUM[self.stage]}")
+
+    def _on_step(self) -> bool:
+        for done, info in zip(self.locals["dones"], self.locals["infos"]):
+            if done and "outcome" in info and info.get("stage") == self.stage:
+                self._recent.append(info["outcome"])
+        self._recent = self._recent[-PROMOTE_WINDOW:]
+
+        if self._recent:
+            n = len(self._recent)
+            for k in ("complete", "crash", "timeout"):
+                self.logger.record(f"curriculum/{k}_rate", self._recent.count(k) / n)
+        self.logger.record("curriculum/stage", self.stage)
+
+        if (self.stage < len(CURRICULUM) - 1 and len(self._recent) >= PROMOTE_WINDOW and
+                self._recent.count("complete") / len(self._recent) >= PROMOTE_COMPLETE_RATE):
+            self.stage += 1
+            self._recent = []
+            self.training_env.env_method("set_stage", self.stage)
+            print(f"\n[Curriculum @ step {self.num_timesteps:,}] -> stage {self.stage} {CURRICULUM[self.stage]}")
+        return True
+
+
 # ── Render-eval callback ───────────────────────────────────────────────────────
 
 class RenderEvalCallback(BaseCallback):
     """Opens a Pygame window for one deterministic episode every eval_freq steps."""
 
-    def __init__(self, eval_freq: int):
+    def __init__(self, eval_freq: int, curriculum=None):
         super().__init__()
         self._eval_freq = eval_freq
         self._last_eval = 0
+        self._curriculum = curriculum
 
     def _on_step(self) -> bool:
         if self.num_timesteps - self._last_eval >= self._eval_freq:
@@ -104,6 +142,8 @@ class RenderEvalCallback(BaseCallback):
         print(f"\n[Render eval @ step {self.num_timesteps:,}]")
 
         env      = SwerveEnv()
+        if self._curriculum is not None:
+            env.set_stage(self._curriculum.stage)
         renderer = Renderer(waypoints=None)
         obs, _   = env.reset()
         renderer.set_waypoints(env._waypoints)
@@ -139,7 +179,7 @@ class RenderEvalCallback(BaseCallback):
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
         status = episode_outcome(env)
-        print(f"  {status}  steps={step}  reward={ep_reward:.2f}  "
+        print(f"  {status}  stage={env.stage}  steps={step}  reward={ep_reward:.2f}  "
               f"waypoints={env._tracker.current_idx}/{len(env._waypoints)}")
 
         renderer.close()
@@ -151,8 +191,9 @@ class RenderEvalCallback(BaseCallback):
 class RecordEvalCallback(BaseCallback):
     """Records one deterministic episode as MP4 at each step in RECORD_STEPS."""
 
-    def __init__(self, record_steps=None, recordings_dir=RECORDINGS_DIR):
+    def __init__(self, record_steps=None, recordings_dir=RECORDINGS_DIR, curriculum=None):
         super().__init__()
+        self._curriculum = curriculum
         self._targets = sorted(record_steps or RECORD_STEPS)
         self._dir = recordings_dir
         os.makedirs(recordings_dir, exist_ok=True)
@@ -171,6 +212,8 @@ class RecordEvalCallback(BaseCallback):
         print(f"\n[Recording @ step {self.num_timesteps:,}] -> {path}")
 
         env      = SwerveEnv()
+        if self._curriculum is not None:
+            env.set_stage(self._curriculum.stage)
         renderer = Renderer(waypoints=None, record_path=path)
         obs, _   = env.reset()
         renderer.set_waypoints(env._waypoints)
@@ -206,7 +249,7 @@ class RecordEvalCallback(BaseCallback):
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
         status = episode_outcome(env)
-        print(f"  {status}  frames={step}  reward={ep_reward:.2f}  saved: {path}")
+        print(f"  {status}  stage={env.stage}  frames={step}  reward={ep_reward:.2f}  saved: {path}")
 
         renderer.close()
         env.close()
@@ -231,15 +274,17 @@ class RewardLogger(BaseCallback):
         os.makedirs(os.path.dirname(self._path), exist_ok=True)
         self._f      = open(self._path, "w", newline="")
         self._writer = csv.writer(self._f)
-        self._writer.writerow(["timestep", "episode_reward"])
+        self._writer.writerow(["timestep", "episode_reward", "stage"])
 
     def _on_step(self) -> bool:
         rewards = self.locals.get("rewards", [0])
         dones   = self.locals.get("dones",   [False])
-        for i, (r, done) in enumerate(zip(rewards, dones)):
+        infos   = self.locals.get("infos",   [{}] * len(dones))
+        for i, (r, done, info) in enumerate(zip(rewards, dones, infos)):
             self._ep_rewards[i] += r
             if done:
-                self._writer.writerow([self.num_timesteps, round(self._ep_rewards[i], 4)])
+                self._writer.writerow([self.num_timesteps, round(self._ep_rewards[i], 4),
+                                       info.get("stage", -1)])
                 self._f.flush()
                 self._ep_rewards[i] = 0.0
         return True
@@ -260,6 +305,9 @@ def main():
     parser.add_argument("--render-eval",    action="store_true")
     parser.add_argument("--eval-freq",      type=int,  default=EVAL_FREQ_DEFAULT)
     parser.add_argument("--render-capture", action="store_true")
+    parser.add_argument("--stage",          type=int,  default=0,
+                        help=f"curriculum stage to start at, 0-{len(CURRICULUM) - 1} "
+                             f"(use the last stage printed when resuming)")
     args = parser.parse_args()
 
     os.makedirs(CHECKPOINT_DIR, exist_ok=True)
@@ -279,15 +327,16 @@ def main():
         verbose     = 1,
     )
     reward_cb = RewardLogger(reward_csv)
-    callbacks = [checkpoint_cb, reward_cb]
+    curriculum_cb = CurriculumCallback(start_stage=args.stage)
+    callbacks = [checkpoint_cb, reward_cb, curriculum_cb]
 
     if args.render_eval:
-        callbacks.append(RenderEvalCallback(eval_freq=args.eval_freq))
+        callbacks.append(RenderEvalCallback(eval_freq=args.eval_freq, curriculum=curriculum_cb))
         print(f"Render-eval ON: window opens/closes every {args.eval_freq:,} steps.")
 
     if args.render_capture:
         rec_dir = os.path.join(RECORDINGS_DIR, f"run_{timestamp}")
-        callbacks.append(RecordEvalCallback(recordings_dir=rec_dir))
+        callbacks.append(RecordEvalCallback(recordings_dir=rec_dir, curriculum=curriculum_cb))
         print(f"Render-capture ON: MP4s will be saved to {rec_dir}/")
 
     if args.resume:
@@ -301,8 +350,9 @@ def main():
 
     print(f"\nStarting randomized-waypoint training for {args.steps:,} timesteps.")
     print(f"Envs: {args.n_envs}  |  device: {SAC_KWARGS['device']}")
-    print(f"Waypoints: {N_WAYPOINTS_MIN}-{N_WAYPOINTS_MAX} per episode, "
-          f"{MIN_WAYPOINT_DISTANCE}-{MAX_WAYPOINT_DISTANCE} m apart, "
+    print(f"Curriculum: {len(CURRICULUM)} stages, last = "
+          f"{CURRICULUM[-1]['n_min']}-{CURRICULUM[-1]['n_max']} waypoints, "
+          f"{MIN_WAYPOINT_DISTANCE}-{CURRICULUM[-1]['max_dist']} m apart; "
           f"{NODE_TIME_LIMIT_STEPS} steps per node")
     print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
