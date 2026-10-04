@@ -36,6 +36,15 @@ from path_randomizer.constants import (
 TOTAL_TIMESTEPS   = 7_000_000
 CHECKPOINT_FREQ   = 10_000
 EVAL_FREQ_DEFAULT = 20_000
+
+# Route test: every ROUTE_TEST_FREQ steps, drive the same ROUTE_TEST_N routes
+# with the deterministic policy (what the robot runs) and keep the best model
+# per curriculum stage. SAC's skill swings up and down between checkpoints
+# (2026-10-04 run, stage 2: 53% complete at 300k, 15% at 480k, 51% at 600k),
+# so the last checkpoint is often not the best one.
+ROUTE_TEST_FREQ   = 10_000
+ROUTE_TEST_N      = 50
+ROUTE_TEST_SEED   = 90_000   # routes 90000..90049 (never the RECORD_SEED route)
 N_ENVS            = 2
 LOG_DIR           = "path_randomizer/logs"
 CHECKPOINT_DIR    = "path_randomizer/checkpoints"
@@ -266,6 +275,61 @@ class RecordEvalCallback(BaseCallback):
         env.close()
 
 
+# ── Route test callback ───────────────────────────────────────────────────────
+
+class RouteTestCallback(BaseCallback):
+    """Scores the deterministic policy on fixed routes, logs the result to a CSV
+    and saves best_stage<N>.zip whenever the complete rate beats that stage's best."""
+
+    def __init__(self, csv_path, curriculum, freq=ROUTE_TEST_FREQ, n=ROUTE_TEST_N):
+        super().__init__()
+        self._csv, self._curriculum, self._freq, self._n = csv_path, curriculum, freq, n
+        self._last = 0
+        self._best = {}   # stage -> best complete rate
+
+    def _on_training_start(self):
+        self._last = self.num_timesteps
+        with open(self._csv, "w", newline="") as f:
+            csv.writer(f).writerow(["timestep", "stage", "complete", "crash", "timeout"])
+
+    def _on_step(self) -> bool:
+        if self.num_timesteps - self._last >= self._freq:
+            self._last = self.num_timesteps
+            self._test()
+        return True
+
+    def _test(self):
+        stage = self._curriculum.stage
+        env = SwerveEnv()
+        env.set_stage(stage)
+        counts = {"COMPLETE": 0, "CRASH": 0, "TIMEOUT": 0, "STOPPED": 0}
+        for i in range(self._n):
+            obs, _ = env.reset(seed=ROUTE_TEST_SEED + i)
+            while True:
+                action, _ = self.model.predict(obs, deterministic=True)
+                obs, _, terminated, truncated, _ = env.step(action)
+                if terminated or truncated:
+                    break
+            counts[episode_outcome(env)] += 1
+        env.close()
+        rate = {k: v / self._n for k, v in counts.items()}
+        with open(self._csv, "a", newline="") as f:
+            csv.writer(f).writerow([self.num_timesteps, stage, rate["COMPLETE"],
+                                    rate["CRASH"], rate["TIMEOUT"]])
+        for k in ("COMPLETE", "CRASH", "TIMEOUT"):
+            self.logger.record(f"route_test/{k.lower()}_rate", rate[k])
+
+        best = self._best.get(stage, -1.0)
+        note = ""
+        if rate["COMPLETE"] > best:
+            self._best[stage] = rate["COMPLETE"]
+            self.model.save(os.path.join(CHECKPOINT_DIR, f"best_stage{stage}.zip"))
+            note = f"  -> new best, saved best_stage{stage}.zip"
+        print(f"\n[Route test @ step {self.num_timesteps:,}] stage {stage}: "
+              f"complete {rate['COMPLETE']:.0%}  crash {rate['CRASH']:.0%}  "
+              f"timeout {rate['TIMEOUT']:.0%}{note}")
+
+
 # ── Reward logger callback ─────────────────────────────────────────────────────
 
 class RewardLogger(BaseCallback):
@@ -338,8 +402,11 @@ def main():
         verbose     = 1,
     )
     reward_cb = RewardLogger(reward_csv)
+    route_csv = os.path.join(LOG_DIR, f"route_test_{timestamp}.csv")
     curriculum_cb = CurriculumCallback(start_stage=args.stage)
-    callbacks = [checkpoint_cb, reward_cb, curriculum_cb]
+    route_cb      = RouteTestCallback(route_csv, curriculum_cb)
+    callbacks = [checkpoint_cb, reward_cb, curriculum_cb, route_cb]
+    print(f"Route test every {ROUTE_TEST_FREQ:,} steps -> {route_csv}")
 
     if args.render_eval:
         callbacks.append(RenderEvalCallback(eval_freq=args.eval_freq, curriculum=curriculum_cb))
