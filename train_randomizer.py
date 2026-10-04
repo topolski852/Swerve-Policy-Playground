@@ -43,6 +43,12 @@ RECORDINGS_DIR    = "path_randomizer/recordings"
 
 
 # Same milestones as train.py so path_following and randomizer clips line up side by side.
+# Every milestone recording drives the same route (per curriculum stage) so the
+# clips can be compared side by side. With a new random route each time, an easy
+# route at 200k and a hard one at 300k looked like the policy had gotten worse.
+# Seed 1507's stage-2 route: 10 nodes, 2 legs that must go around a field element.
+RECORD_SEED = 1507
+
 RECORD_STEPS = [
     500, 1_000, 2_000,
     5_000, 8_000, 12_000,
@@ -215,7 +221,7 @@ class RecordEvalCallback(BaseCallback):
         if self._curriculum is not None:
             env.set_stage(self._curriculum.stage)
         renderer = Renderer(waypoints=None, record_path=path)
-        obs, _   = env.reset()
+        obs, _   = env.reset(seed=RECORD_SEED)
         renderer.set_waypoints(env._waypoints)
 
         done      = False
