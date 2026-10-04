@@ -70,5 +70,3 @@ RW_TIME_PENALTY      = -0.03  # per step — creates urgency to commit and advan
 # never gets to earn. The penalty only needs to be a nudge on top of that;
 # at -75 the robot learned to be afraid of moving instead of to steer.
 RW_COLLISION_PENALTY     = -10.0  # one-time on wall or obstacle contact
-OBSTACLE_DANGER_MARGIN   =  0.15  # metres of warning zone beyond robot bumper (~6 in)
-RW_OBSTACLE_PROXIMITY    = -0.5   # per-step at collision boundary; 0 at outer danger edge

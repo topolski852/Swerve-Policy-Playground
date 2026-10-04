@@ -33,7 +33,6 @@ from path_randomizer.constants import (
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
     RW_PROGRESS, RW_VEL_ALIGN, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
-    OBSTACLE_DANGER_MARGIN, RW_OBSTACLE_PROXIMITY,
 )
 
 # Goal vectors are divided by the longest leg (6 m), not the 18.3 m field
@@ -212,23 +211,6 @@ class SwerveEnv(gym.Env):
 
         goal_done = self._tracker.done
 
-        # ── Obstacle proximity shaping ────────────────────────────────────────
-        # AABB-to-AABB distance, consistent with _check_collision (square bumpers).
-        # bx/by = gap from bumper face to obstacle face on each axis; 0 when touching.
-        # bumper_dist = 0 at collision boundary, OBSTACLE_DANGER_MARGIN at outer edge.
-        proximity_penalty = 0.0
-        r        = ROBOT_BUMPER_HALF
-        detect_r = r + OBSTACLE_DANGER_MARGIN
-        for (ox1, oy1, ox2, oy2) in IMPASSABLE_RECTS:
-            if (rx > ox1 - detect_r and rx < ox2 + detect_r and
-                    ry > oy1 - detect_r and ry < oy2 + detect_r):
-                bx = max(0.0, max(ox1 - rx, rx - ox2) - r)
-                by = max(0.0, max(oy1 - ry, ry - oy2) - r)
-                bumper_dist = math.hypot(bx, by)
-                if bumper_dist < OBSTACLE_DANGER_MARGIN:
-                    depth = 1.0 - bumper_dist / OBSTACLE_DANGER_MARGIN
-                    proximity_penalty += RW_OBSTACLE_PROXIMITY * depth
-
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
             progress_reward
@@ -236,7 +218,6 @@ class SwerveEnv(gym.Env):
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
-            + proximity_penalty
         )
 
         # ── Termination ───────────────────────────────────────────────────────
