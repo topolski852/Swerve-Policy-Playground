@@ -8,8 +8,9 @@
 #
 # Action space  : Box(3,) — [vx, vy, omega] normalized to [-1, 1]
 #                 omega zeroed (translation-only phase)
-# Observation   : 8-element vector — see OBS_LABELS. Goal vectors are in units
+# Observation   : 8 + N_RAYS values — see OBS_LABELS. Goal vectors are in units
 #                 of GOAL_SCALE (6 m), length capped at 1 so direction is kept.
+#                 Rays: clearance to field elements/walls (path_randomizer/rays.py).
 # Reward        : progress + velocity alignment each step, arrival bonuses
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,9 @@ from lib.field_constants import (
     FIELD_LENGTH, FIELD_WIDTH, DT,
     ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
 )
+from path_randomizer.rays import cast_rays
 from path_randomizer.constants import (
+    N_RAYS,
     ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
     NODE_TIME_LIMIT_STEPS, CURRICULUM,
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
@@ -39,8 +42,9 @@ from path_randomizer.constants import (
 # noticeably faster with /6 m.
 GOAL_SCALE = MAX_WAYPOINT_DISTANCE
 
-OBS_DIM    = 8
-OBS_LABELS = ["vx_n", "vy_n", "rx_n", "ry_n", "dx0_n", "dy0_n", "dx1_n", "dy1_n"]
+OBS_LABELS = (["vx_n", "vy_n", "rx_n", "ry_n", "dx0_n", "dy0_n", "dx1_n", "dy1_n"]
+              + [f"ray{k}" for k in range(N_RAYS)])
+OBS_DIM    = len(OBS_LABELS)
 
 
 def goal_vector(rx, ry, wx, wy):
@@ -129,8 +133,8 @@ class SwerveEnv(gym.Env):
             low=-1.0, high=1.0, shape=(3,), dtype=np.float32
         )
 
-        obs_low  = np.array([-1., -1.,  0.,  0., -1., -1., -1., -1.], dtype=np.float32)
-        obs_high = np.array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.], dtype=np.float32)
+        obs_low  = np.array([-1., -1.,  0.,  0., -1., -1., -1., -1.] + [0.] * N_RAYS, dtype=np.float32)
+        obs_high = np.array([ 1.,  1.,  1.,  1.,  1.,  1.,  1.,  1.] + [1.] * N_RAYS, dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
         self._robot      = SwerveState()
@@ -310,8 +314,11 @@ class SwerveEnv(gym.Env):
             dx0_n, dy0_n = goal_vector(rx, ry, *self._tracker.current)
             dx1_n, dy1_n = goal_vector(rx, ry, *self._tracker.next_wp)
 
-        return np.array([vx_n, vy_n, rx_n, ry_n, dx0_n, dy0_n, dx1_n, dy1_n],
-                        dtype=np.float32)
+        rays = cast_rays(rx, ry)
+        return np.concatenate([
+            np.array([vx_n, vy_n, rx_n, ry_n, dx0_n, dy0_n, dx1_n, dy1_n], dtype=np.float32),
+            rays,
+        ])
 
     def _random_valid_pos(self):
         r = ROBOT_BUMPER_HALF

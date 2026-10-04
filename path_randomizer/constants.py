@@ -30,6 +30,12 @@ MAX_WAYPOINT_DISTANCE = 6.0   # metres
 MIN_WAYPOINT_DISTANCE = 0.5   # metres — floor so the robot must physically move between points
                                # (must exceed PASS_RADIUS)
 
+# ── Distance rays (observation) ────────────────────────────────────────────────
+# How far the robot can drive in N_RAYS evenly spaced directions before its
+# bumper reaches a field element or wall. See path_randomizer/rays.py.
+N_RAYS    = 8      # 45° apart; at 2 m their tips are 1.5 m apart
+RAY_RANGE = 2.0    # metres — anything farther reads as 1.0 ("clear")
+
 # ── Curriculum ─────────────────────────────────────────────────────────────────
 # Start with short, clear legs (like path_following's single path) and move to
 # the full random problem once the robot is good at the easy one. Starting at
