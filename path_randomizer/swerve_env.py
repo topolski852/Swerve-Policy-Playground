@@ -221,13 +221,16 @@ class SwerveEnv(gym.Env):
         )
 
         # ── Termination ───────────────────────────────────────────────────────
-        # A crash is a real ending (terminated), not a time limit (truncated).
-        # SB3 treats truncated as "the episode was cut short, the future would
-        # have continued" and adds the critic's guess of that future to the
-        # crash penalty, so the agent never learned how bad a crash really is.
+        # Crashing and giving up on a node are real endings (terminated), not
+        # time limits (truncated). SB3 treats truncated as "the episode was cut
+        # short, the future would have continued" and adds the critic's guess of
+        # that future, so the agent never learned what these endings really cost.
+        # On the robot, giving up on a node ends the route: every node after it
+        # is lost too.
         collision  = self._check_collision()
-        terminated = goal_done or collision
-        truncated  = (self._node_steps >= NODE_TIME_LIMIT_STEPS) and not terminated
+        gave_up    = self._node_steps >= NODE_TIME_LIMIT_STEPS
+        terminated = goal_done or collision or gave_up
+        truncated  = False
 
         if collision:
             reward += RW_COLLISION_PENALTY

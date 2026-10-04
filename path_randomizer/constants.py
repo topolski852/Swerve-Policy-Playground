@@ -16,7 +16,7 @@ PASS_RADIUS       = 0.40   # m — kAuto.Accuracy.NORMAL, the default when a nod
 # ── Episode parameters ─────────────────────────────────────────────────────────
 
 # Give up on a node the robot hasn't reached in 5 s, the same as 1507Base's
-# RouteRunner (kAuto.MAX_SECONDS_PER_NODE). The episode ends there (truncated).
+# RouteRunner (kAuto.MAX_SECONDS_PER_NODE). The episode ends there (terminated).
 # The old 3000-step (60 s) episode budget let a lost robot wander for
 # thousands of steps, so the agent got very few arrivals to learn from.
 NODE_TIME_LIMIT_STEPS = 250   # 5.0 s at 20 ms
