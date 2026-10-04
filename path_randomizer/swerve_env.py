@@ -8,7 +8,8 @@
 #
 # Action space  : Box(3,) — [vx, vy, omega] normalized to [-1, 1]
 #                 omega zeroed (translation-only phase)
-# Observation   : 8-element vector — see OBS_LABELS
+# Observation   : 8-element vector — see OBS_LABELS. Goal vectors are in units
+#                 of GOAL_SCALE (6 m), length capped at 1 so direction is kept.
 # Reward        : monotone approach reward + arrival bonuses (no milestone rings)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -25,17 +26,32 @@ from lib.field_constants import (
 )
 from path_randomizer.constants import (
     ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
-    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS,
+    N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, NODE_TIME_LIMIT_STEPS,
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
     RW_APPROACH, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
     OBSTACLE_DANGER_MARGIN, RW_OBSTACLE_PROXIMITY,
 )
 
-FIELD_DIAGONAL = math.sqrt(FIELD_LENGTH ** 2 + FIELD_WIDTH ** 2)
+# Goal vectors are divided by the longest leg (6 m), not the 18.3 m field
+# diagonal. Over the diagonal a 1–5 m leg became 0.05–0.27 and the pass radius
+# 0.02, too small for the network to steer by; a 1-waypoint test learned
+# noticeably faster with /6 m.
+GOAL_SCALE = MAX_WAYPOINT_DISTANCE
 
 OBS_DIM    = 8
 OBS_LABELS = ["vx_n", "vy_n", "rx_n", "ry_n", "dx0_n", "dy0_n", "dx1_n", "dy1_n"]
+
+
+def goal_vector(rx, ry, wx, wy):
+    """Robot-to-waypoint vector in units of GOAL_SCALE. A vector longer than
+    GOAL_SCALE is shrunk to length 1 (not clipped per axis) so it still points
+    the right way; the next node can be up to 12 m away."""
+    dx, dy = (wx - rx) / GOAL_SCALE, (wy - ry) / GOAL_SCALE
+    n = math.hypot(dx, dy)
+    if n > 1.0:
+        dx, dy = dx / n, dy / n
+    return float(dx), float(dy)
 
 
 class WaypointTracker:
@@ -135,6 +151,7 @@ class SwerveEnv(gym.Env):
         self._tracker.reset(self._waypoints, start_idx=1)
 
         self._step_count = 0
+        self._node_steps = 0   # steps spent on the current node
         # Seed best-dist to the actual starting distance so the first step only
         # earns reward for real progress, not for the inf → real_dist gap.
         if not self._tracker.done:
@@ -148,6 +165,7 @@ class SwerveEnv(gym.Env):
         action = np.clip(action, -1.0, 1.0).astype(np.float32)
         self._drive(float(action[0]) * ROBOT_MAX_SPEED, float(action[1]) * ROBOT_MAX_SPEED)
         self._step_count += 1
+        self._node_steps += 1
 
         rx, ry = self._robot.x, self._robot.y
 
@@ -166,6 +184,7 @@ class SwerveEnv(gym.Env):
 
             advanced = self._tracker.update(rx, ry)
             if advanced:
+                self._node_steps = 0
                 waypoint_bonus = RW_WAYPOINT_BONUS * advanced
                 # Seed to actual distance to the new current waypoint, not inf.
                 if not self._tracker.done:
@@ -209,7 +228,7 @@ class SwerveEnv(gym.Env):
         # crash penalty, so the agent never learned how bad a crash really is.
         collision  = self._check_collision()
         terminated = goal_done or collision
-        truncated  = (self._step_count >= MAX_EPISODE_STEPS) and not terminated
+        truncated  = (self._node_steps >= NODE_TIME_LIMIT_STEPS) and not terminated
 
         if collision:
             reward += RW_COLLISION_PENALTY
@@ -260,12 +279,8 @@ class SwerveEnv(gym.Env):
         if self._tracker.done:
             dx0_n = dy0_n = dx1_n = dy1_n = 0.0
         else:
-            wx0, wy0 = self._tracker.current
-            dx0_n = float(np.clip((wx0 - rx) / FIELD_DIAGONAL, -1.0, 1.0))
-            dy0_n = float(np.clip((wy0 - ry) / FIELD_DIAGONAL, -1.0, 1.0))
-            wx1, wy1 = self._tracker.next_wp
-            dx1_n = float(np.clip((wx1 - rx) / FIELD_DIAGONAL, -1.0, 1.0))
-            dy1_n = float(np.clip((wy1 - ry) / FIELD_DIAGONAL, -1.0, 1.0))
+            dx0_n, dy0_n = goal_vector(rx, ry, *self._tracker.current)
+            dx1_n, dy1_n = goal_vector(rx, ry, *self._tracker.next_wp)
 
         return np.array([vx_n, vy_n, rx_n, ry_n, dx0_n, dy0_n, dx1_n, dy1_n],
                         dtype=np.float32)

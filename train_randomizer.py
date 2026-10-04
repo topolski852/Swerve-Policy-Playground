@@ -26,7 +26,10 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from path_randomizer.swerve_env import SwerveEnv
-from path_randomizer.constants import MAX_EPISODE_STEPS
+from path_randomizer.constants import (
+    NODE_TIME_LIMIT_STEPS, N_WAYPOINTS_MIN, N_WAYPOINTS_MAX,
+    MIN_WAYPOINT_DISTANCE, MAX_WAYPOINT_DISTANCE,
+)
 
 # ── Training hyperparameters ───────────────────────────────────────────────────
 
@@ -66,14 +69,16 @@ SAC_KWARGS = dict(
 
 
 
-def episode_outcome(env, terminated, steps):
+def episode_outcome(env):
     """Label how an eval episode ended. terminated covers both finishing and
     crashing, so check the robot itself rather than the flags."""
     if env._check_collision():
         return "CRASH"
-    if terminated:
+    if env._tracker.done:
         return "COMPLETE"
-    return "TIMEOUT" if steps >= MAX_EPISODE_STEPS else "STOPPED"
+    if env._node_steps >= NODE_TIME_LIMIT_STEPS:
+        return "TIMEOUT"   # gave up on a node after 5 s, like RouteRunner
+    return "STOPPED"
 
 
 # ── Render-eval callback ───────────────────────────────────────────────────────
@@ -133,7 +138,7 @@ class RenderEvalCallback(BaseCallback):
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
-        status = episode_outcome(env, terminated, step)
+        status = episode_outcome(env)
         print(f"  {status}  steps={step}  reward={ep_reward:.2f}  "
               f"waypoints={env._tracker.current_idx}/{len(env._waypoints)}")
 
@@ -200,7 +205,7 @@ class RecordEvalCallback(BaseCallback):
             }
             renderer.draw(env._robot, env._tracker, env._get_module_states(), info=hud)
 
-        status = episode_outcome(env, terminated, step)
+        status = episode_outcome(env)
         print(f"  {status}  frames={step}  reward={ep_reward:.2f}  saved: {path}")
 
         renderer.close()
@@ -296,7 +301,9 @@ def main():
 
     print(f"\nStarting randomized-waypoint training for {args.steps:,} timesteps.")
     print(f"Envs: {args.n_envs}  |  device: {SAC_KWARGS['device']}")
-    print(f"Waypoints: {3}-{12} per episode, max {6.0} m apart (uniform throughout)")
+    print(f"Waypoints: {N_WAYPOINTS_MIN}-{N_WAYPOINTS_MAX} per episode, "
+          f"{MIN_WAYPOINT_DISTANCE}-{MAX_WAYPOINT_DISTANCE} m apart, "
+          f"{NODE_TIME_LIMIT_STEPS} steps per node")
     print(f"Checkpoints saved every {CHECKPOINT_FREQ:,} steps to {CHECKPOINT_DIR}/")
     print("Press Ctrl+C to stop early — latest checkpoint is kept.\n")
 

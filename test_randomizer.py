@@ -116,7 +116,7 @@ def main():
             model, env, renderer, ep, deterministic
         )
 
-        outcome = episode_outcome(env, completed, steps)
+        outcome = episode_outcome(env)
         completed = outcome == "COMPLETE"   # terminated is also True on a crash
         result = f"{outcome:8s}"
         wp_done = env._tracker.current_idx - 1   # -1 because index 0 is the spawn point

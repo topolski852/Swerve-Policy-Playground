@@ -15,12 +15,19 @@ PASS_RADIUS       = 0.40   # m — kAuto.Accuracy.NORMAL, the default when a nod
 
 # ── Episode parameters ─────────────────────────────────────────────────────────
 
-MAX_EPISODE_STEPS     = 3000  # ~60 s — generous budget for 3-12 waypoints
+# Give up on a node the robot hasn't reached in 5 s, the same as 1507Base's
+# RouteRunner (kAuto.MAX_SECONDS_PER_NODE). The episode ends there (truncated).
+# The old 3000-step (60 s) episode budget let a lost robot wander for
+# thousands of steps, so the agent got very few arrivals to learn from.
+NODE_TIME_LIMIT_STEPS = 250   # 5.0 s at 20 ms
 
 N_WAYPOINTS_MIN       = 3     # fewest waypoints per episode
 N_WAYPOINTS_MAX       = 12    # most waypoints per episode
-MAX_WAYPOINT_DISTANCE = 6.0   # metres — practical FRC ceiling; > 6 m flagged as unexpected in app
-MIN_WAYPOINT_DISTANCE = 1.0   # metres — floor so the robot must physically move between points
+# Train on 0.5–6 m so the range routes actually use (1–5 m; 1507Base allows
+# at most POLICY_MAX_NODE_SPACING = 5 m) sits in the middle of the training
+# data, not at its thin edges.
+MAX_WAYPOINT_DISTANCE = 6.0   # metres
+MIN_WAYPOINT_DISTANCE = 0.5   # metres — floor so the robot must physically move between points
                                # (must exceed PASS_RADIUS)
 
 # ── Reward weights ─────────────────────────────────────────────────────────────
