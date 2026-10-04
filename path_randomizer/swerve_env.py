@@ -10,7 +10,7 @@
 #                 omega zeroed (translation-only phase)
 # Observation   : 8-element vector — see OBS_LABELS. Goal vectors are in units
 #                 of GOAL_SCALE (6 m), length capped at 1 so direction is kept.
-# Reward        : monotone approach reward + arrival bonuses (no milestone rings)
+# Reward        : progress + velocity alignment each step, arrival bonuses
 # ──────────────────────────────────────────────────────────────────────────────
 
 import math
@@ -28,7 +28,7 @@ from path_randomizer.constants import (
     ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
     N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, NODE_TIME_LIMIT_STEPS,
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
-    RW_APPROACH, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
+    RW_PROGRESS, RW_VEL_ALIGN, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
     RW_TIME_PENALTY, RW_COLLISION_PENALTY,
     OBSTACLE_DANGER_MARGIN, RW_OBSTACLE_PROXIMITY,
 )
@@ -120,9 +120,8 @@ class SwerveEnv(gym.Env):
         self._n_waypoints_max = N_WAYPOINTS_MAX
         self._wp_distance_max = MAX_WAYPOINT_DISTANCE
 
-        # Monotone approach tracker: seeded to actual distance on each reset/advance
-        # so the first step only earns reward for real progress (never inf).
-        self._best_dist_to_wp = 0.0
+        # Distance to the current node last step, for the progress reward.
+        self._prev_dist = 0.0
 
     # ──────────────────────────────────────────────────────────────────────────
     # Gymnasium API
@@ -152,13 +151,7 @@ class SwerveEnv(gym.Env):
 
         self._step_count = 0
         self._node_steps = 0   # steps spent on the current node
-        # Seed best-dist to the actual starting distance so the first step only
-        # earns reward for real progress, not for the inf → real_dist gap.
-        if not self._tracker.done:
-            wx, wy = self._tracker.current
-            self._best_dist_to_wp = math.hypot(sx - wx, sy - wy)
-        else:
-            self._best_dist_to_wp = 0.0
+        self._prev_dist  = self._dist_to_node()
         return self._get_obs(), {}
 
     def step(self, action: np.ndarray):
@@ -169,29 +162,24 @@ class SwerveEnv(gym.Env):
 
         rx, ry = self._robot.x, self._robot.y
 
-        # ── Approach reward + arrival ─────────────────────────────────────────
-        approach_reward = 0.0
+        # ── Progress + alignment + arrival ────────────────────────────────────
+        progress_reward = 0.0
+        align_reward    = 0.0
         waypoint_bonus  = 0.0
         if not self._tracker.done:
             wx, wy = self._tracker.current
             dist   = math.hypot(rx - wx, ry - wy)
 
-            # Monotone approach reward: only fires when the robot sets a new
-            # personal-best distance to the current waypoint. Back-and-forth
-            # oscillation earns nothing because it can't beat the existing best.
-            approach_reward       = max(0.0, self._best_dist_to_wp - dist) * RW_APPROACH
-            self._best_dist_to_wp = min(self._best_dist_to_wp, dist)
+            progress_reward = RW_PROGRESS * (self._prev_dist - dist)
+            if dist > 1e-6:
+                toward = (self._robot.vx * (wx - rx) + self._robot.vy * (wy - ry)) / dist
+                align_reward = RW_VEL_ALIGN * toward / ROBOT_MAX_SPEED
 
             advanced = self._tracker.update(rx, ry)
             if advanced:
                 self._node_steps = 0
                 waypoint_bonus = RW_WAYPOINT_BONUS * advanced
-                # Seed to actual distance to the new current waypoint, not inf.
-                if not self._tracker.done:
-                    wx2, wy2 = self._tracker.current
-                    self._best_dist_to_wp = math.hypot(rx - wx2, ry - wy2)
-                else:
-                    self._best_dist_to_wp = 0.0
+            self._prev_dist = self._dist_to_node()   # to the new node if it advanced
 
         goal_done = self._tracker.done
 
@@ -214,7 +202,8 @@ class SwerveEnv(gym.Env):
 
         # ── Reward ────────────────────────────────────────────────────────────
         reward = (
-            approach_reward
+            progress_reward
+            + align_reward
             + waypoint_bonus
             + (RW_GOAL_BONUS if goal_done else 0.0)
             + RW_TIME_PENALTY
@@ -259,6 +248,12 @@ class SwerveEnv(gym.Env):
     # ──────────────────────────────────────────────────────────────────────────
     # Helpers
     # ──────────────────────────────────────────────────────────────────────────
+
+    def _dist_to_node(self):
+        if self._tracker.done:
+            return 0.0
+        wx, wy = self._tracker.current
+        return math.hypot(self._robot.x - wx, self._robot.y - wy)
 
     def _drive(self, cmd_vx, cmd_vy):
         """One 20 ms loop, the way 1507Base drives: the command goes through the
