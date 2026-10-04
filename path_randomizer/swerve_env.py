@@ -18,12 +18,13 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from lib.kinematics import SwerveState
+from lib.accel_limiter import AccelLimiter
 from lib.field_constants import (
-    MAX_SPEED_MPS, FIELD_LENGTH, FIELD_WIDTH,
+    FIELD_LENGTH, FIELD_WIDTH, DT,
     ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
-    WAYPOINT_PASS_RADIUS,
 )
 from path_randomizer.constants import (
+    ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
     N_WAYPOINTS_MIN, N_WAYPOINTS_MAX, MAX_EPISODE_STEPS,
     MAX_WAYPOINT_DISTANCE, MIN_WAYPOINT_DISTANCE,
     RW_APPROACH, RW_WAYPOINT_BONUS, RW_GOAL_BONUS,
@@ -66,7 +67,7 @@ class WaypointTracker:
         advanced = 0
         while not self.done:
             wx, wy = self.current
-            if math.hypot(robot_x - wx, robot_y - wy) < WAYPOINT_PASS_RADIUS:
+            if math.hypot(robot_x - wx, robot_y - wy) < PASS_RADIUS:
                 self.current_idx += 1
                 advanced += 1
             else:
@@ -91,6 +92,7 @@ class SwerveEnv(gym.Env):
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
         self._robot      = SwerveState()
+        self._limiter    = AccelLimiter(SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, ROBOT_MAX_SPEED, DT)
         self._tracker    = WaypointTracker()
         self._waypoints  = []
         self._step_count = 0
@@ -115,6 +117,7 @@ class SwerveEnv(gym.Env):
 
         sx, sy = self._random_valid_pos()
         self._robot.reset(x=sx, y=sy, heading=0.0)
+        self._limiter.reset()
 
         n = int(self.np_random.integers(self._n_waypoints_min, self._n_waypoints_max + 1))
         # Chain each waypoint within _wp_distance_max of the previous so
@@ -143,11 +146,7 @@ class SwerveEnv(gym.Env):
 
     def step(self, action: np.ndarray):
         action = np.clip(action, -1.0, 1.0).astype(np.float32)
-        self._robot.step(
-            float(action[0]) * MAX_SPEED_MPS,
-            float(action[1]) * MAX_SPEED_MPS,
-            0.0,
-        )
+        self._drive(float(action[0]) * ROBOT_MAX_SPEED, float(action[1]) * ROBOT_MAX_SPEED)
         self._step_count += 1
 
         rx, ry = self._robot.x, self._robot.y
@@ -242,9 +241,18 @@ class SwerveEnv(gym.Env):
     # Helpers
     # ──────────────────────────────────────────────────────────────────────────
 
+    def _drive(self, cmd_vx, cmd_vy):
+        """One 20 ms loop, the way 1507Base drives: the command goes through the
+        same slip/torque acceleration limiter (Swerve.drive -> SwerveAccelLimiter),
+        then the robot moves at the limited velocity. Field-relative; heading stays 0."""
+        vx, vy = self._limiter.limit(cmd_vx, cmd_vy)
+        self._robot.vx, self._robot.vy, self._robot.omega = vx, vy, 0.0
+        self._robot.x += vx * DT
+        self._robot.y += vy * DT
+
     def _get_obs(self):
-        vx_n = float(np.clip(self._robot.vx / MAX_SPEED_MPS, -1.0, 1.0))
-        vy_n = float(np.clip(self._robot.vy / MAX_SPEED_MPS, -1.0, 1.0))
+        vx_n = float(np.clip(self._robot.vx / ROBOT_MAX_SPEED, -1.0, 1.0))
+        vy_n = float(np.clip(self._robot.vy / ROBOT_MAX_SPEED, -1.0, 1.0))
         rx, ry = self._robot.x, self._robot.y
         rx_n = float(np.clip(rx / FIELD_LENGTH, 0.0, 1.0))
         ry_n = float(np.clip(ry / FIELD_WIDTH,  0.0, 1.0))
