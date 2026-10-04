@@ -204,6 +204,11 @@ class RecordEvalCallback(BaseCallback):
         self._dir = recordings_dir
         os.makedirs(recordings_dir, exist_ok=True)
 
+    def _on_training_start(self):
+        # A resumed run starts at its checkpoint's step count: skip milestones
+        # already behind it instead of recording them all on the first step.
+        self._targets = [t for t in self._targets if t > self.num_timesteps]
+
     def _on_step(self) -> bool:
         if self._targets and self.num_timesteps >= self._targets[0]:
             target = self._targets.pop(0)
