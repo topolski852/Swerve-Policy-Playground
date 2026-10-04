@@ -11,7 +11,8 @@
 # Observation   : 8 + N_RAYS values — see OBS_LABELS. Goal vectors are in units
 #                 of GOAL_SCALE (6 m), length capped at 1 so direction is kept.
 #                 Rays: clearance to field elements/walls (path_randomizer/rays.py).
-# Reward        : progress + velocity alignment each step, arrival bonuses
+# Reward        : progress + velocity alignment along the shortest drivable
+#                 path each step, arrival bonuses
 # ──────────────────────────────────────────────────────────────────────────────
 
 import math
@@ -26,6 +27,8 @@ from lib.field_constants import (
     ROBOT_BUMPER_HALF, IMPASSABLE_RECTS,
 )
 from path_randomizer.rays import cast_rays
+from path_randomizer.geometry import leg_clear
+from path_randomizer.pathing import PathToNode
 from path_randomizer.constants import (
     N_RAYS,
     ROBOT_MAX_SPEED, SLIP_ACCEL_MPS2, TORQUE_ACCEL_MPS2, PASS_RADIUS,
@@ -55,32 +58,6 @@ def goal_vector(rx, ry, wx, wy):
     if n > 1.0:
         dx, dy = dx / n, dy / n
     return float(dx), float(dy)
-
-
-def leg_clear(ax, ay, bx, by):
-    """True if the robot can drive the straight line A->B without touching a
-    field element (each element grown by the bumper half-width; slab test)."""
-    r = ROBOT_BUMPER_HALF
-    dx, dy = bx - ax, by - ay
-    for ox1, oy1, ox2, oy2 in IMPASSABLE_RECTS:
-        t0, t1 = 0.0, 1.0
-        hit = True
-        for lo, hi, p, d in ((ox1 - r, ox2 + r, ax, dx), (oy1 - r, oy2 + r, ay, dy)):
-            if abs(d) < 1e-12:
-                if p <= lo or p >= hi:
-                    hit = False
-                    break
-            else:
-                ta, tb = (lo - p) / d, (hi - p) / d
-                if ta > tb:
-                    ta, tb = tb, ta
-                t0, t1 = max(t0, ta), min(t1, tb)
-                if t0 >= t1:
-                    hit = False
-                    break
-        if hit:
-            return False
-    return True
 
 
 class WaypointTracker:
@@ -147,7 +124,9 @@ class SwerveEnv(gym.Env):
         # train_randomizer.py starts at 0 and moves up with set_stage().
         self.set_stage(len(CURRICULUM) - 1)
 
-        # Distance to the current node last step, for the progress reward.
+        # Shortest drivable path to the current node (around field elements),
+        # and its length last step, for the progress reward.
+        self._path      = None
         self._prev_dist = 0.0
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -179,6 +158,7 @@ class SwerveEnv(gym.Env):
 
         self._step_count = 0
         self._node_steps = 0   # steps spent on the current node
+        self._new_node_path()
         self._prev_dist  = self._dist_to_node()
         return self._get_obs(), {}
 
@@ -195,18 +175,21 @@ class SwerveEnv(gym.Env):
         align_reward    = 0.0
         waypoint_bonus  = 0.0
         if not self._tracker.done:
-            wx, wy = self._tracker.current
-            dist   = math.hypot(rx - wx, ry - wy)
+            # Measured along the shortest drivable path (path_randomizer/pathing.py),
+            # so going around a field element earns reward instead of losing it.
+            dist, (tx, ty) = self._path.query(rx, ry)
 
             progress_reward = RW_PROGRESS * (self._prev_dist - dist)
-            if dist > 1e-6:
-                toward = (self._robot.vx * (wx - rx) + self._robot.vy * (wy - ry)) / dist
+            leg = math.hypot(tx - rx, ty - ry)
+            if leg > 1e-6:   # velocity along the path's first straight stretch
+                toward = (self._robot.vx * (tx - rx) + self._robot.vy * (ty - ry)) / leg
                 align_reward = RW_VEL_ALIGN * toward / ROBOT_MAX_SPEED
 
             advanced = self._tracker.update(rx, ry)
             if advanced:
                 self._node_steps = 0
                 waypoint_bonus = RW_WAYPOINT_BONUS * advanced
+                self._new_node_path()
             self._prev_dist = self._dist_to_node()   # to the new node if it advanced
 
         goal_done = self._tracker.done
@@ -270,11 +253,15 @@ class SwerveEnv(gym.Env):
         """Pick the CURRICULUM stage used from the next reset() on."""
         self.stage = int(stage)
 
+    def _new_node_path(self):
+        if not self._tracker.done:
+            self._path = PathToNode(*self._tracker.current)
+
     def _dist_to_node(self):
+        """Shortest drivable path length to the current node."""
         if self._tracker.done:
             return 0.0
-        wx, wy = self._tracker.current
-        return math.hypot(self._robot.x - wx, self._robot.y - wy)
+        return self._path.query(self._robot.x, self._robot.y)[0]
 
     def _drive(self, cmd_vx, cmd_vy):
         """One 20 ms loop, the way 1507Base drives: the command goes through the

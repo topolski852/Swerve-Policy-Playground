@@ -55,8 +55,9 @@ PROMOTE_WINDOW        = 100   # ...measured over this many episodes
 
 # Every step, two small rewards tell the robot whether it is heading the right way
 # (the same pair path_following learns from):
-#   progress  : metres closer to the current node this step (negative if farther)
-#   alignment : how much of the robot's velocity points at the node, -1..1 of top speed
+#   progress  : metres closer to the current node this step (negative if farther),
+#               measured along the shortest path around field elements
+#   alignment : how much of the robot's velocity points along that path, -1..1 of top speed
 # Driving away gives back exactly what driving closer earned, so back-and-forth
 # oscillation nets nothing and can't be farmed.
 RW_PROGRESS          =  2.0   # per metre closer this step
