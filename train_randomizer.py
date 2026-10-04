@@ -351,6 +351,11 @@ def main():
                          if k not in ("verbose", "policy_kwargs")}
         model = SAC.load(args.resume, env=env, **resume_kwargs)
         model.verbose = 1
+        # Checkpoints don't save the replay buffer, so a resumed run starts with
+        # an empty one. learning_starts counts total steps (already past 10k), so
+        # without this it would train from the first step on a handful of
+        # samples. Refill the buffer first, as a fresh run does.
+        model.learning_starts = model.num_timesteps + SAC_KWARGS["learning_starts"]
     else:
         model = SAC(env=env, **SAC_KWARGS)
 
