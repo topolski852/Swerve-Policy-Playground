@@ -30,14 +30,19 @@ slip 15 / torque 10 m/s²), 0.40 m pass radius (`kAuto.Accuracy.NORMAL`), give u
 
 - **Obs (16):** vx, vy (÷5.04), x, y (÷field), current/next node vector (÷6 m, length ≤ 1), 8 rays
   (`path_randomizer/rays.py`: clearance to field-element polygons/walls, ÷2 m). Java must match rays.py's header formula.
-- **Reward:** 2.0 × m closer + 0.8 × velocity toward node / vmax per step, +100 per node, +75 all done,
-  −0.03/step, crash −10 and `terminated` (never `truncated`: SB3 bootstraps past truncation).
+- **Reward:** 2.0 × m closer + 0.8 × velocity toward node / vmax per step, both measured along the shortest
+  path around field elements (`pathing.py`, training only), +100 per node, +75 all done, −0.03/step, crash −10.
+  Crash and 5 s node give-up are `terminated` (never `truncated`: SB3 bootstraps past truncation).
 - **Curriculum:** `CURRICULUM` in constants.py; promote at 75% complete over 100 episodes; `--stage N` to resume.
+- **Best model:** every 10k steps the deterministic policy drives 50 fixed routes; `checkpoints/best_stage<N>.zip`
+  keeps the best (SAC swings ±10–20 points between checkpoints). Curve: `logs/route_test_<time>.csv`.
 - **Run:** `.\.venv\Scripts\python.exe -u train_randomizer.py --render-capture --n-envs 2 --steps N`.
   Checkpoint names repeat every run: move old ones into `path_randomizer/checkpoints/run_<date>/` first.
 - **History:** the 2026-06 and 2026-10-03 runs never learned (0.1–0.2 nodes/episode). Causes and fixes are in
   the 2026-10-04 commits (obs scale, 60 s episodes, crash-as-truncated, crash −75, no curriculum).
-  After the fixes, 100k steps → ~90% complete on stage 0 and 60–80% on stage 1.
+  Current best: `checkpoints/run_20261004_2019/best_stage2.zip` (1M steps, ~8 h on the laptop). On 150 fresh
+  stage-2 routes: 78% complete, 5% crash, blocked legs fail 11%, clear legs 1%; stage 0/1 94%/97%.
+  Still improving at 1M; it plateaued at ~40% from 110k to 550k before breaking through.
 
 ## Active experiment: fuel_scoring
 

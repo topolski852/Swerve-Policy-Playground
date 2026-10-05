@@ -99,8 +99,9 @@ The original demo. A fixed figure-8 arc-length parameterized path loops around b
 Each episode generates a fresh chain of waypoints placed randomly on the field. The agent must reach them in order (within 0.40 m), giving up on any node it can't reach in 5 s. The trained policy becomes the `Driver.POLICY` route driver in 1507Base, so the sim robot uses 1507Base's numbers: 5.04 m/s top speed and a port of its `SwerveAccelLimiter` (`lib/accel_limiter.py`).
 
 - **Observation (16):** velocity, position, vectors to the current and next node (÷ 6 m), and 8 distance rays: how far the robot can drive in each direction before it hits a field element or wall (`path_randomizer/rays.py`, works on any polygon).
-- **Reward:** metres of progress toward the node + velocity pointed at it each step, +100 per node, +75 for finishing, −10 for a crash (which also ends the episode).
+- **Reward:** metres of progress toward the node + velocity pointed at it each step (both measured along the shortest path around field elements, so detours aren't punished), +100 per node, +75 for finishing, −10 for a crash. Crashing or giving up on a node ends the episode, as it ends the route on the robot.
 - **Curriculum:** starts with 1–3 nodes up to 3 m apart on clear legs and moves up a stage when 75% of recent episodes finish; the last stage is 3–12 nodes 0.5–6 m apart, including legs the robot must steer around a hub or trench. `test_randomizer.py --phase N` tests on stage N.
+- **Best model:** every 10k steps the trainer drives the same 50 routes and keeps `checkpoints/best_stage<N>.zip`; skill swings between checkpoints, so the last one is often not the best. The 2026-10-04 1M-step run reached 78% complete / 5% crash on fresh full-difficulty routes.
 
 The commit history explains each design choice; the 2026-10 commits record why the first version never learned.
 
