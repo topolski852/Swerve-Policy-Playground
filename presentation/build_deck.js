@@ -156,7 +156,8 @@ const OBS_GROUPS = {
   path:     { fill: HEX.accent6, txt: HEX.dk1, name: "Place on the path" },
   heading:  { fill: HEX.accent5, txt: HEX.dk1, name: "Facing" },
   position: { fill: HEX.accent4, txt: HEX.dk1, name: "Place on the field" },
-  rays:     { fill: HEX.accent6, txt: HEX.dk1, name: "Distance rays" },
+  // violet, not accent6: orange already means "Place on the path" in version 1's chips
+  rays:     { fill: "A78BFA", txt: HEX.dk1, name: "Distance rays" },
 };
 const OBS_V1 = [
   ["Speed X", "speed"], ["Speed Y", "speed"],
@@ -369,7 +370,7 @@ async function build() {
     ], { x: sx + 0.3, y: 1.7, w: sw - 0.6, h: 5.0, isTextBox: true, fontSize: 15, color: C.background2,
       valign: "top", margin: 0, paraSpaceAfter: 10 });
   }
-  s.addNotes("Walk around the loop. The policy is a small neural network. Every 20 milliseconds (the same loop timing as our real robot code) it sees, acts, and gets scored. Training means nudging the network so actions that led to more points become more likely.");
+  s.addNotes("Walk around the loop. The policy is a small neural network. Every 20 milliseconds (the same loop timing as our real robot code) it sees, acts, and gets scored. Training means nudging the network so actions that led to more points become more likely. The method we use is called SAC (Soft Actor-Critic). It trains two networks: the actor is the policy that drives, and the critic is a second network that predicts how many points are coming. That critic shows up again in Chapter 3, when a bug fooled it.");
 
   // 7 ─ Words to know
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "What is RL?" });
@@ -716,7 +717,7 @@ async function build() {
         t: "Running out the 60 s clock cost −90 points and a crash only −75. Maybe it crashed on purpose?",
         verdict: "Wrong. It only plans about 2 seconds ahead, and it never saw the crash coming.", vc: HEX.accent2 },
       { Comp: fa.FaRobot, fill: HEX.accent3, ic: HEX.lt1, head: "Test: a 3-line robot",
-        t: "We wrote a dumb program with no AI: drive straight at the yellow dot.",
+        t: "We wrote a simple program with no AI: drive straight at the yellow dot.",
         verdict: "It scored +214 per attempt; the AI scored −67. The points were fine, the learning was broken.", vc: HEX.accent4 },
       { Comp: fa.FaCompressArrowsAlt, fill: HEX.accent3, ic: HEX.lt1, head: "Shrink the problem",
         t: "One waypoint, no walls to crash into: it learned in minutes. Then add pieces back one at a time.",
@@ -762,7 +763,7 @@ async function build() {
         p: "Up to 12 random waypoints, some behind obstacles, from the very first step.",
         f: "A curriculum: short, clear paths first." },
       { Comp: fa.FaShieldAlt, head: "Too scared to move",
-        p: "−75 for a crash taught it that sitting still was safest.",
+        p: "Once crashes really ended the attempt, −75 made sitting still look safest.",
         f: "−10. A crash already loses every point it could have earned." },
       { Comp: fa.FaEyeSlash, head: "Blind to obstacles",
         p: "It had to memorize where the hub is from its position alone.",
@@ -783,7 +784,7 @@ async function build() {
         color: C.background2, valign: "top", margin: 0, paraSpaceAfter: 6 });
     }
   }
-  s.addNotes("Six problems, all found by the shrink-the-problem test or by watching the robot. The first one is a real bug students can learn from: in our code, 'crashed' and 'ran out of time' used the same signal, and the AI library treats 'ran out of time' as 'you would have kept going'. So it never learned that crashes end everything. Later we found the same bug on the 5-second give-up rule and fixed it too. The curriculum is the same idea as Chapter 1: start easy. Each fix is its own commit in our git history, with the reason written down.");
+  s.addNotes("Six problems, all found by the shrink-the-problem test or by watching the robot. The first one is a real bug students can learn from: in our code, 'crashed' and 'ran out of time' used the same signal, and the AI library treats 'ran out of time' as 'you would have kept going'. So it never learned that crashes end everything. Later we found the same bug on the 5-second give-up rule and fixed it too. 'Too scared to move' is not the same as the theory on the last slide: that theory said crashing was too cheap. After fix 1, crashes really did end everything, and then −75 was so painful that the one-waypoint test learned to sit still instead of steering. The curriculum is the same idea as Chapter 1: start easy. Each fix is its own commit in our git history, with the reason written down.");
 
   // 16b ─ Observations then vs now
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -799,16 +800,18 @@ async function build() {
       { text: "“Progress” and “Off line” only make sense with ONE fixed path. Heading isn't needed while the robot never turns." },
     ], { x: x0, y: 2.85, w: W - 2 * M, h: 0.6, isTextBox: true, fontSize: 16, color: C.background2, margin: 0, valign: "top" });
 
-    s.addText("Now (random paths): 16 numbers", { x: x0, y: 3.6, w: 9, h: 0.45, isTextBox: true, fontSize: 20, bold: true,
+    s.addText("Now (random paths): 16 numbers, 10 of them new", { x: x0, y: 3.6, w: 9, h: 0.45, isTextBox: true, fontSize: 20, bold: true,
       color: C.accent1, margin: 0 });
     chipRow(s, OBS_NOW, x0, 4.3, cw, ch, gap, "Now", { isNew: new Set([2, 3]) });
-    chipRow(s, OBS_RAYS, x0, 5.2, cw, ch, gap, "Rays");
+    chipRow(s, OBS_RAYS, x0, 5.35, cw, ch, gap, "Rays", { isNew: new Set([0, 1, 2, 3, 4, 5, 6, 7]) });
     s.addText([
       { text: "New: ", options: { bold: true, color: C.accent4 } },
-      { text: "Field X and Y (where it is), and 8 rays (how far to the nearest obstacle in 8 directions)." },
-    ], { x: x0, y: 6.1, w: W - 2 * M, h: 0.6, isTextBox: true, fontSize: 16, color: C.background2, margin: 0, valign: "top" });
+      { text: "Field X and Y, where it is (added in June). " },
+      { text: "8 rays", options: { bold: true, color: "A78BFA" } },
+      { text: ", how far it can drive in each compass direction before hitting something (added in October)." },
+    ], { x: x0, y: 6.2, w: W - 2 * M, h: 0.6, isTextBox: true, fontSize: 16, color: C.background2, margin: 0, valign: "top" });
   }
-  s.addNotes("Top row: the 9 numbers from Chapter 1. Three only made sense for one fixed path, so they're gone. Bottom: the 16 numbers the robot sees today. Speed and the next two waypoints stayed. Field X and Y came first (next slide), then the 8 rays (the slide after that). The waypoint numbers are also scaled differently now: divided by 6 m instead of the 18 m field, one of the fixes from the last slide.");
+  s.addNotes("Top row: the 9 numbers from Chapter 1. Three only made sense for one fixed path, so they're gone. Bottom: the 16 numbers the robot sees today: 6 kept from version 1 and 10 new ones. Field X and Y came first, back in June (next slide). The 8 rays came in October as one of the fixes (the slide after that). Ray E, NE, N... are compass directions on the field: E points toward the red alliance wall. The waypoint numbers are also scaled differently now: divided by 6 m instead of the 18 m field, one of the fixes from the last slide.");
 
   // 16c ─ Why position
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -834,7 +837,7 @@ async function build() {
     await badge(s, fa.FaLightbulb, M + 0.35, 5.45, 0.8, HEX.accent1, HEX.dk1, "next idea");
     s.addText([
       { text: "But a map only works for ONE field. ", options: { bold: true, color: C.background1 } },
-      { text: "It had to memorize where the 2026 hub is, and next year the field changes. So we gave it something better: eyes." },
+      { text: "Position (added in June) made it memorize where the 2026 hub is, and next year the field changes. So in October we gave it something better: eyes." },
     ], { x: M + 1.45, y: 5.1, w: W - 2 * M - 1.8, h: 1.6, isTextBox: true, fontSize: 17,
       color: C.background2, valign: "middle", margin: 0 });
   }
@@ -878,11 +881,11 @@ async function build() {
       { text: "Each ray asks: how far can I drive this way before my bumper hits something? (up to 2 m)", options: { breakLine: true } },
       { text: "Like a car's parking sensors, pointing 8 ways at once.", options: { italic: true, color: C.accent1, breakLine: true } },
       { text: "It works on ANY shape: 2025's hexagon, 2026's rectangles, whatever 2027 brings.", options: { bold: true, color: C.background1, breakLine: true } },
-      { text: "We removed the old warning-zone penalty: once the robot could see obstacles, it only slowed learning down." },
+      { text: "We removed the old warning zone (a growing penalty within 15 cm of an obstacle). With rays it didn't help, so we kept the simpler reward." },
     ], { x: sx + 0.35, y: 1.7, w: sw - 0.7, h: 4.85, isTextBox: true, fontSize: 17, color: C.background2,
       valign: "top", margin: 0, paraSpaceAfter: 14 });
   }
-  s.addNotes("Each ray is one number between 0 (touching) and 1 (clear for at least 2 m). In the picture the east ray is short because the hub is right there. On the robot, these get computed from the corners of each field element, which our 1507Base code already stores, so next year we only swap in the new field's shapes. Earlier we tried a warning zone: a growing penalty within 15 cm of an obstacle. With rays the robot can see obstacles directly, and in our test the warning zone just made it hesitate, so we took it out.");
+  s.addNotes("Each ray is one number between 0 (touching) and 1 (clear for at least 2 m). In the picture the east ray is short because the hub is right there. On the robot, these get computed from the corners of each field element, which our 1507Base code already stores, so next year we only swap in the new field's shapes. Earlier we tried a warning zone: a growing penalty within 15 cm of an obstacle. With rays the robot can see obstacles directly. We ran the same 100k-step training with and without the warning zone: without it, the robot reached the second curriculum stage sooner (44k vs 53k steps) and timed out less (24% vs 32%). That's one run each, so it's a hint, not proof, but when two versions tie, keep the simpler one.");
 
   // 16e ─ Today's scoreboard
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -945,13 +948,14 @@ async function build() {
   {
     const rt = charts.route_test || [];
     // label only round values (500k, 1M, 1.5M, ...) so the axis reads cleanly
-    const labels = rt.map((p) => p.k % 500 ? "" : p.k < 1000 ? p.k + "k" : (p.k / 1000) + "M");
+    // ...plus the first point, so students can see the chart starts at 150k, not 0
+    const labels = rt.map((p, i) => (p.k % 500 && i > 0) ? "" : p.k < 1000 ? p.k + "k" : (p.k / 1000) + "M");
     const cw = 8.3;
     s.addChart(pres.charts.LINE, [
       { name: "Finished", labels, values: rt.map((p) => p.complete) },
       { name: "Crashed", labels, values: rt.map((p) => p.crash) },
     ], {
-      x: M, y: 1.4, w: cw, h: 5.35, objectName: "learning curve chart",
+      x: M, y: 1.4, w: cw, h: 4.95, objectName: "learning curve chart",
       showTitle: true, title: "% of 50 hard test routes, every 50,000 steps", titleColor: HEX.lt1, titleFontSize: 14, titleFontFace: "+mn-lt",
       chartColors: [HEX.accent4, HEX.accent2], lineSize: 2.5, lineDataSymbol: "none",
       valAxisMinVal: 0, valAxisMaxVal: 100, valAxisMajorUnit: 20,
@@ -962,6 +966,8 @@ async function build() {
       showLegend: true, legendPos: "b", legendColor: HEX.lt2, legendFontSize: 12, legendFontFace: "+mn-lt",
       showCatAxisTitle: true, catAxisTitle: "training steps", catAxisTitleColor: HEX.accent5, catAxisTitleFontSize: 11,
     });
+    s.addText("Starts at 150,000 steps: before that, the robot was still practicing on the easy curriculum stages.", {
+      x: M, y: 6.4, w: cw, h: 0.4, isTextBox: true, fontSize: 12, italic: true, color: C.accent5, margin: 0 });
     const notes = [
       { head: "Stuck around 40%", sub: "250k to 550k steps. It looked like it had stopped learning.", c: HEX.accent1 },
       { head: "Breakthrough", sub: "550k to 1M: finished routes climbed and crashes fell toward zero.", c: HEX.accent4 },
@@ -978,7 +984,7 @@ async function build() {
         valign: "top", margin: 0, paraSpaceAfter: 4 });
     }
   }
-  s.addNotes("Every 10,000 steps the trainer drives the same 50 hard routes and records how many it finishes; this chart averages those tests over every 50,000 steps. For 400,000 steps it hovered around 40% and we wondered if it was stuck. Then it took off. The dip right after 1M is from restarting training, which starts with an empty memory of past attempts; it recovered within about 150,000 steps. Total: 2.5 million steps, about 14 hours of simulated driving, which took about 20 hours on a laptop. Lesson: some learning looks flat for a long time before it clicks.");
+  s.addNotes("Every 10,000 steps the trainer drives the same 50 hard routes and records how many it finishes; this chart averages those tests over every 50,000 steps. It starts at 150,000 because the hard routes only began at 110,000 steps, once the robot had passed the two easy curriculum stages. For 400,000 steps it hovered around 40% and we wondered if it was stuck. Then it took off. The dip right after 1M is from restarting training, which starts with an empty memory of past attempts; it recovered within about 150,000 steps. Total: 2.5 million steps, about 14 hours of simulated driving, which took about 10 hours of computer time (8 PM to 6:30 AM): the simulator runs faster than real time. Lesson: some learning looks flat for a long time before it clicks.");
 
   // 16h ─ Same route, getting better
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -1099,7 +1105,7 @@ async function build() {
       { Comp: fa.FaLaptopCode, fill: HEX.accent1, ic: HEX.dk1, head: "1. Train",
         sub: "Swerve Policy Playground", t: "Python simulator. The robot practices millions of steps." },
       { Comp: fa.FaVial, fill: HEX.accent3, ic: HEX.lt1, head: "2. Test",
-        sub: "1507Labs", t: "Our real robot code in the WPILib simulator. Does the policy drive our actual swerve code?" },
+        sub: "1507Labs", t: "Our real robot code in the WPILib (Worcester Polytechnic Institute Library) simulator. Does the policy drive our actual swerve code?" },
       { Comp: fa.FaMicrochip, fill: HEX.accent4, ic: HEX.dk1, head: "3. Drive",
         sub: "1507Base on SystemCore", t: "The 2027 robot controller runs autos using the policy as the driver." },
     ];
@@ -1195,10 +1201,10 @@ async function build() {
       ["NT", "NetworkTables", "How the robot and computers share live data"],
       ["OBS", "Observation", "One number the robot “sees”, like its speed or position"],
       ["Ray", "Distance ray", "How far the robot can drive in one direction before hitting something"],
-      ["—", "Curriculum", "Practicing easy versions first, then harder ones"],
+      ["Curriculum", "Training plan", "Practicing easy versions first, then harder ones"],
     ];
     const head = (t) => ({ text: t, options: { bold: true, color: HEX.dk1, fill: { color: HEX.accent1 }, fontSize: 14 } });
-    const rows = [[head("Short"), head("Stands for"), head("What it means")]].concat(g.map(([a, b, c], i) => [
+    const rows = [[head("Term"), head("Stands for"), head("What it means")]].concat(g.map(([a, b, c], i) => [
       { text: a, options: { bold: true, color: HEX.accent1, fill: { color: i % 2 ? HEX.dk1 : HEX.dk2 }, fontSize: 15 } },
       { text: b, options: { bold: true, color: HEX.lt1, fill: { color: i % 2 ? HEX.dk1 : HEX.dk2 }, fontSize: 15 } },
       { text: c, options: { color: HEX.lt2, fill: { color: i % 2 ? HEX.dk1 : HEX.dk2 }, fontSize: 15 } },
