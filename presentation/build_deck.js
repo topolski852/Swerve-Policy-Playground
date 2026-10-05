@@ -3,7 +3,7 @@
 //   python presentation/prep_media.py     # copy clips + posters into presentation/media
 //   node presentation/build_deck.js       # writes presentation/RL_Intro_Lesson1.pptx
 //
-// Re-run both after the path_randomizer training run produces more videos (Chapter 3).
+// prep_media.py also writes media/charts.json (Chapter 3 charts) from the training logs.
 
 const path = require("path");
 const fs = require("fs");
@@ -18,6 +18,7 @@ const HERE = __dirname;
 const MEDIA = path.join(HERE, "media");
 const OUT = path.join(HERE, "RL_Intro_Lesson1.pptx");
 const manifest = JSON.parse(fs.readFileSync(path.join(MEDIA, "manifest.json"), "utf8"));
+const charts = JSON.parse(fs.readFileSync(path.join(MEDIA, "charts.json"), "utf8"));
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
 // Dark "night field" ground so the sim videos sit naturally; yellow = reward
@@ -155,6 +156,7 @@ const OBS_GROUPS = {
   path:     { fill: HEX.accent6, txt: HEX.dk1, name: "Place on the path" },
   heading:  { fill: HEX.accent5, txt: HEX.dk1, name: "Facing" },
   position: { fill: HEX.accent4, txt: HEX.dk1, name: "Place on the field" },
+  rays:     { fill: HEX.accent6, txt: HEX.dk1, name: "Distance rays" },
 };
 const OBS_V1 = [
   ["Speed X", "speed"], ["Speed Y", "speed"],
@@ -166,6 +168,8 @@ const OBS_NOW = [
   ["Field X", "position"], ["Field Y", "position"],
   ["Next X", "waypoint"], ["Next Y", "waypoint"], ["After X", "waypoint"], ["After Y", "waypoint"],
 ];
+// 8 rays, 45° apart, field-relative (path_randomizer/rays.py: ray 0 points +x, then counter-clockwise)
+const OBS_RAYS = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"].map((d) => ["Ray " + d, "rays"]);
 
 // opts.dropped: Set of indexes to grey out + strike; opts.isNew: Set of indexes to tag NEW
 function chipRow(slide, chips, x, y, cw, ch, gap, name, opts = {}) {
@@ -632,18 +636,18 @@ async function build() {
   s = pres.addSlide({ masterName: "SECTION", sectionTitle: "Chapter 3: Random paths" });
   s.addText("CHAPTER 3", { placeholder: "kicker" });
   s.addText("Random paths, no memorizing", { placeholder: "title" });
-  s.addText("So far it learned ONE path by heart. Real autonomous routines change every match. New idea: a brand-new random path for every attempt.", { placeholder: "body" });
-  s.addNotes("Memorizing one route is like memorizing one test's answers. We want it to actually understand driving to a point.");
+  s.addText("So far it learned ONE path by heart. Real autos change every match, so every attempt now gets a brand-new random path. Our first big try failed. This chapter is how we fixed it.", { placeholder: "body" });
+  s.addNotes("Memorizing one route is like memorizing one test's answers. We want it to actually understand driving to a point. Spoiler: it works now, but it took a failed training run and some detective work to get there.");
 
-  // 16 ─ Random paths
+  // 16 ─ Random paths: the finished policy
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
   s.addText("Every attempt is a new puzzle", { placeholder: "title" });
   {
     const lw = 4.6;
     const pts = [
-      { Comp: fa.FaRandom, head: "Random every time", t: "3 to 12 waypoints anywhere on the field, each 1 to 6 m apart." },
+      { Comp: fa.FaRandom, head: "Random every time", t: "3 to 12 waypoints, each 0.5 to 6 m from the last. Some legs pass right behind a hub or trench." },
       { Comp: fa.FaBrain, head: "No memorizing", t: "It can't learn one route by heart. It has to learn HOW to drive to any point." },
-      { Comp: fa.FaMapMarkedAlt, head: "Same field every time", t: "The hubs and trenches never move, so it can learn where they are." },
+      { Comp: fa.FaFlagCheckered, head: "It works", t: "The finished robot completes 90% of brand-new routes and steers around obstacles by itself." },
     ];
     for (let i = 0; i < pts.length; i++) {
       const y = 1.5 + i * 1.7;
@@ -654,62 +658,157 @@ async function build() {
       ], { x: M + 1.05, y: y - 0.05, w: lw - 1.05, h: 1.5, isTextBox: true, color: C.background2, valign: "top", margin: 0 });
     }
     const vx = M + lw + 0.35, vw = W - M - vx;
-    const early = manifest.ch3_early, late = manifest.ch3_late;
-    // Two stacked rows: video on the left, label on the right.
-    const rowW = 5.0, rowH = rowW * 640 / 1440, lx = vx + rowW + 0.3, lw2 = W - M - lx;
-    const rows = [
-      { key: "ch3_early", y: 1.5, sub: "Just starting out: random moves while it explores." },
-      { key: "ch3_late", y: 1.5 + rowH + 0.5, sub: "Latest test drive. Still training on a laptop right now!" },
+    const h = await video(s, "ch3_final", vx, 1.5, vw, "final policy video");
+    caption(s, vx, 1.5 + h + 0.25, vw, [
+      { text: `${steps(manifest.ch3_final.train_step)} practice steps: `, options: { bold: true, color: C.accent1 } },
+      { text: "all 10 waypoints in 8.8 seconds, going around two obstacles on the way. The yellow dot is the current target; the red dots are the start and finish." },
+    ], "final policy caption", 1.2);
+  }
+  s.addNotes("Play the video. Each yellow dot is the current target waypoint, and the path is different every attempt. Watch it swing around the hub instead of driving into it. This is the policy we're bringing to our real robot code. But the first time we trained this, it didn't work at all.");
+
+  // 16a ─ The failed run
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("Our first try failed", { placeholder: "title" });
+  {
+    const vw = 6.0;
+    const h = await video(s, "ch3_fail", M, 1.5, vw, "failed run video");
+    caption(s, M, 1.5 + h + 0.2, vw, [
+      { text: "500,000 steps in: ", options: { bold: true, color: C.accent2 } },
+      { text: "it drives into a wall in 2.6 seconds. Every test drive from 100,000 steps on ended in a crash." },
+    ], "failed run caption", 0.9);
+    const failed = charts.failed || [];
+    const cx = M + vw + 0.45, cw = W - M - cx;
+    s.addChart(pres.charts.LINE, [{ name: "Average score", labels: failed.map((p) => p.k >= 1000 ? (p.k / 1000) + "M" : p.k + "k"),
+      values: failed.map((p) => p.reward) }], {
+      x: cx, y: 1.45, w: cw, h: 3.55, objectName: "failed run chart",
+      showTitle: true, title: "Average score per attempt (Oct 3 run)", titleColor: HEX.lt1, titleFontSize: 14, titleFontFace: "+mn-lt",
+      chartColors: [HEX.accent2], lineSize: 2.5, lineDataSymbol: "none",
+      valAxisMinVal: -100, valAxisMaxVal: 0, valAxisMajorUnit: 25,
+      valAxisLabelColor: HEX.lt2, catAxisLabelColor: HEX.lt2, valAxisLabelFontSize: 11, catAxisLabelFontSize: 11,
+      valAxisLabelFontFace: "+mn-lt", catAxisLabelFontFace: "+mn-lt", catAxisLabelFrequency: 4,
+      valGridLine: { color: "3A4250", size: 0.5 }, catGridLine: { style: "none" },
+      catAxisLineShow: false, valAxisLineShow: false, showLegend: false,
+      showCatAxisTitle: true, catAxisTitle: "training steps", catAxisTitleColor: HEX.accent5, catAxisTitleFontSize: 11,
+    });
+    const stats = [
+      { big: "500,000", small: "practice steps (about 2 hours on a laptop)", col: HEX.lt1 },
+      { big: "0.2", small: "waypoints reached per attempt", col: HEX.accent2 },
+      { big: "0", small: "routes finished in testing", col: HEX.accent2 },
     ];
-    for (const r of rows) {
-      const m = manifest[r.key];
-      if (m && !(r.key === "ch3_late" && manifest.ch3_early && m.train_step <= manifest.ch3_early.train_step)) {
-        await video(s, r.key, vx, r.y, rowW, r.key + " video");
-        s.addText([
-          { text: `${steps(m.train_step)} steps`, options: { bold: true, fontSize: 20, color: C.accent1, breakLine: true } },
-          { text: r.sub, options: { fontSize: 15 } },
-        ], { x: lx, y: r.y, w: lw2, h: rowH, isTextBox: true, color: C.background2, valign: "middle", margin: 0, paraSpaceAfter: 6 });
-      } else {
-        placeholderVideo(s, vx, r.y, rowW, rowH, "Training video coming soon", r.key + " placeholder");
-      }
+    const sw = (W - 2 * M - 0.6) / 3, sy = 5.35, sh = 1.4;
+    stats.forEach((st, i) => {
+      const x = M + i * (sw + 0.3);
+      card(s, x, sy, sw, sh, `failed stat ${i + 1}`);
+      s.addText(st.big, { x: x + 0.3, y: sy + 0.1, w: sw - 0.6, h: 0.75, isTextBox: true, fontSize: 36, bold: true,
+        color: st.col, valign: "middle", margin: 0 });
+      s.addText(st.small, { x: x + 0.3, y: sy + 0.85, w: sw - 0.6, h: 0.45, isTextBox: true, fontSize: 14,
+        color: C.background2, valign: "top", margin: 0 });
+    });
+  }
+  s.addNotes("October 3: we trained the random-path robot for half a million steps. The score line is flat: after 500,000 steps it was no better than at the start. Every test video ended in a crash within a couple of seconds. It reached about one waypoint every five attempts. So: what went wrong?");
+
+  // 16a2 ─ Detective work
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("Detective work", { placeholder: "title" });
+  {
+    const cols = [
+      { Comp: fa.FaSearch, fill: HEX.accent3, ic: HEX.lt1, head: "Theory: crashing was cheaper",
+        t: "Running out the 60 s clock cost −90 points and a crash only −75. Maybe it crashed on purpose?",
+        verdict: "Wrong. It only plans about 2 seconds ahead, and it never saw the crash coming.", vc: HEX.accent2 },
+      { Comp: fa.FaRobot, fill: HEX.accent3, ic: HEX.lt1, head: "Test: a 3-line robot",
+        t: "We wrote a dumb program with no AI: drive straight at the yellow dot.",
+        verdict: "It scored +214 per attempt; the AI scored −67. The points were fine, the learning was broken.", vc: HEX.accent4 },
+      { Comp: fa.FaCompressArrowsAlt, fill: HEX.accent3, ic: HEX.lt1, head: "Shrink the problem",
+        t: "One waypoint, no walls to crash into: it learned in minutes. Then add pieces back one at a time.",
+        verdict: "Each piece that stopped the learning was a bug to fix. Next slide.", vc: HEX.accent1 },
+    ];
+    const cw = 3.85, gap = (W - 2 * M - 3 * cw) / 2, y = 1.45, ch = 4.1;
+    for (let i = 0; i < cols.length; i++) {
+      const c = cols[i], x = M + i * (cw + gap);
+      card(s, x, y, cw, ch, c.head + " card");
+      await badge(s, c.Comp, x + 0.3, y + 0.3, 0.8, c.fill, c.ic, c.head);
+      s.addText(c.head, { x: x + 1.25, y: y + 0.3, w: cw - 1.5, h: 0.8, isTextBox: true, fontSize: 18,
+        bold: true, color: C.background1, valign: "middle", margin: 0 });
+      s.addText(c.t, { x: x + 0.3, y: y + 1.3, w: cw - 0.6, h: 1.25, isTextBox: true, fontSize: 15,
+        color: C.background2, valign: "top", margin: 0 });
+      s.addText(c.verdict, { x: x + 0.3, y: y + 2.65, w: cw - 0.6, h: 1.3, isTextBox: true, fontSize: 15,
+        bold: true, color: c.vc, valign: "top", margin: 0 });
+    }
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: M, y: 5.85, w: W - 2 * M, h: 0.85, rectRadius: 0.12,
+      fill: { color: HEX.dk2 }, line: { color: HEX.accent1, width: 1.5 }, objectName: "takeaway outline" });
+    s.addText([
+      { text: "Measure, don't guess. ", options: { bold: true, color: C.background1 } },
+      { text: "Our first explanation sounded right, and a quick test proved it wrong." },
+    ], { x: M + 0.35, y: 5.85, w: W - 2 * M - 0.7, h: 0.85, isTextBox: true, fontSize: 17,
+      color: C.background2, valign: "middle", margin: 0 });
+  }
+  s.addNotes("Our first guess: crashing was cheaper than timing out, so it crashed on purpose. Sounds right! But the robot only cares about roughly the next 2 seconds of points (that's what the 0.99 'discount' setting does), so a 60-second clock barely mattered to it, and when we looked inside its brain, it predicted good things right up until it hit the wall. Then the key test: a three-line program that just drives at the dot. It beat the AI by almost 300 points per attempt. That told us the scoring was fine; the AI just wasn't learning. Finally we shrank the problem down to one waypoint and added pieces back until learning broke.");
+
+  // 16a3 ─ What was broken
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("What was broken, and the fix", { placeholder: "title" });
+  {
+    const items = [
+      { Comp: fa.FaBug, head: "A crash looked like a time-out",
+        p: "The code told the AI “time ran out” when it crashed, so it assumed it would have kept driving.",
+        f: "A crash now ends the attempt for real." },
+      { Comp: fa.FaSearchMinus, head: "Numbers too tiny to read",
+        p: "Waypoint directions were divided by the 18 m field, so a 2 m trip read as 0.11.",
+        f: "Divide by 6 m instead." },
+      { Comp: fa.FaHourglassHalf, head: "60 seconds to get lost",
+        p: "A lost robot wandered for 3,000 steps, so it rarely reached anything to learn from.",
+        f: "Give up after 5 s per waypoint, like our robot code." },
+      { Comp: fa.FaGraduationCap, head: "The final exam on day one",
+        p: "Up to 12 random waypoints, some behind obstacles, from the very first step.",
+        f: "A curriculum: short, clear paths first." },
+      { Comp: fa.FaShieldAlt, head: "Too scared to move",
+        p: "−75 for a crash taught it that sitting still was safest.",
+        f: "−10. A crash already loses every point it could have earned." },
+      { Comp: fa.FaEyeSlash, head: "Blind to obstacles",
+        p: "It had to memorize where the hub is from its position alone.",
+        f: "8 distance rays so it can SEE obstacles." },
+    ];
+    const cw = (W - 2 * M - 0.6) / 3, ch = 2.5, gy = 0.3, y0 = 1.45;
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i], x = M + (i % 3) * (cw + 0.3), y = y0 + Math.floor(i / 3) * (ch + gy);
+      card(s, x, y, cw, ch, it.head + " card");
+      await badge(s, it.Comp, x + 0.3, y + 0.25, 0.7, HEX.accent2, HEX.lt1, it.head);
+      s.addText(it.head, { x: x + 1.15, y: y + 0.25, w: cw - 1.4, h: 0.7, isTextBox: true, fontSize: 17,
+        bold: true, color: C.background1, valign: "middle", margin: 0 });
+      s.addText([
+        { text: it.p, options: { breakLine: true } },
+        { text: "Fix: ", options: { bold: true, color: C.accent4 } },
+        { text: it.f, options: { color: C.background1 } },
+      ], { x: x + 0.3, y: y + 1.05, w: cw - 0.6, h: 1.35, isTextBox: true, fontSize: 14,
+        color: C.background2, valign: "top", margin: 0, paraSpaceAfter: 6 });
     }
   }
-  s.addNotes("Each yellow dot is the current target waypoint; the path is different every attempt. Compare the early clip (lost) with the latest one. This is the policy we're bringing to our real robot code. Next few slides: what changed in what it sees and how it's scored.");
+  s.addNotes("Six problems, all found by the shrink-the-problem test or by watching the robot. The first one is a real bug students can learn from: in our code, 'crashed' and 'ran out of time' used the same signal, and the AI library treats 'ran out of time' as 'you would have kept going'. So it never learned that crashes end everything. Later we found the same bug on the 5-second give-up rule and fixed it too. The curriculum is the same idea as Chapter 1: start easy. Each fix is its own commit in our git history, with the reason written down.");
 
   // 16b ─ Observations then vs now
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
   s.addText("What it sees: then vs. now", { placeholder: "title" });
   {
-    const cw = 1.22, gap = 0.14, ch = 0.75;
-    const x0 = M + 0.0;
-    const rows = [
-      { y: 1.45, head: "Version 1 (figure-8): 9 numbers", chips: OBS_V1, opts: { dropped: new Set([6, 7, 8]) },
-        note: [
-          { text: "Crossed out: ", options: { bold: true, color: C.background1 } },
-          { text: "“Progress” and “Off line” only make sense with ONE fixed path. Heading isn't needed while the robot never turns." },
-        ] },
-      { y: 3.55, head: "Now (random paths): 8 numbers", chips: OBS_NOW, opts: { isNew: new Set([2, 3]) },
-        note: [
-          { text: "New: ", options: { bold: true, color: C.accent4 } },
-          { text: "Field X and Field Y, where the robot is on the field." },
-        ] },
-    ];
-    for (const r of rows) {
-      s.addText(r.head, { x: x0, y: r.y, w: 9, h: 0.45, isTextBox: true, fontSize: 20, bold: true,
-        color: C.accent1, margin: 0 });
-      chipRow(s, r.chips, x0, r.y + 0.7, cw, ch, gap, r.head, r.opts);
-      s.addText(r.note, { x: x0, y: r.y + 0.7 + ch + 0.15, w: W - 2 * M, h: 0.7, isTextBox: true, fontSize: 16,
-        color: C.background2, margin: 0, valign: "top" });
-    }
-    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: M, y: 5.85, w: W - 2 * M, h: 0.85, rectRadius: 0.12,
-      fill: { color: HEX.dk2 }, line: { color: HEX.accent1, width: 1.5 }, objectName: "takeaway outline" });
+    const cw = 1.22, gap = 0.14, ch = 0.7;
+    const x0 = M;
+    s.addText("Version 1 (figure-8): 9 numbers", { x: x0, y: 1.4, w: 9, h: 0.45, isTextBox: true, fontSize: 20, bold: true,
+      color: C.accent1, margin: 0 });
+    chipRow(s, OBS_V1, x0, 2.0, cw, ch, gap, "Version 1", { dropped: new Set([6, 7, 8]) });
     s.addText([
-      { text: "Fewer numbers, but better ones. ", options: { bold: true, color: C.background1 } },
-      { text: "Every observation should help the robot make a decision." },
-    ], { x: M + 0.35, y: 5.85, w: W - 2 * M - 0.7, h: 0.85, isTextBox: true, fontSize: 17,
-      color: C.background2, valign: "middle", margin: 0 });
+      { text: "Crossed out: ", options: { bold: true, color: C.background1 } },
+      { text: "“Progress” and “Off line” only make sense with ONE fixed path. Heading isn't needed while the robot never turns." },
+    ], { x: x0, y: 2.85, w: W - 2 * M, h: 0.6, isTextBox: true, fontSize: 16, color: C.background2, margin: 0, valign: "top" });
+
+    s.addText("Now (random paths): 16 numbers", { x: x0, y: 3.6, w: 9, h: 0.45, isTextBox: true, fontSize: 20, bold: true,
+      color: C.accent1, margin: 0 });
+    chipRow(s, OBS_NOW, x0, 4.3, cw, ch, gap, "Now", { isNew: new Set([2, 3]) });
+    chipRow(s, OBS_RAYS, x0, 5.2, cw, ch, gap, "Rays");
+    s.addText([
+      { text: "New: ", options: { bold: true, color: C.accent4 } },
+      { text: "Field X and Y (where it is), and 8 rays (how far to the nearest obstacle in 8 directions)." },
+    ], { x: x0, y: 6.1, w: W - 2 * M, h: 0.6, isTextBox: true, fontSize: 16, color: C.background2, margin: 0, valign: "top" });
   }
-  s.addNotes("Top row: the 9 numbers from Chapter 1. Three of them only made sense for one fixed path, so they're gone. Bottom row: the 8 numbers the robot sees today. Speed and the next two waypoints stayed. The big addition is Field X and Field Y. The random-path version actually started with only 6 numbers (no position) and we added position a few minutes later. Next slide is why.");
+  s.addNotes("Top row: the 9 numbers from Chapter 1. Three only made sense for one fixed path, so they're gone. Bottom: the 16 numbers the robot sees today. Speed and the next two waypoints stayed. Field X and Y came first (next slide), then the 8 rays (the slide after that). The waypoint numbers are also scaled differently now: divided by 6 m instead of the 18 m field, one of the fixes from the last slide.");
 
   // 16c ─ Why position
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -732,120 +831,239 @@ async function build() {
     }
     s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: M, y: 5.1, w: W - 2 * M, h: 1.6, rectRadius: 0.12,
       fill: { color: HEX.dk2 }, line: { color: HEX.accent1, width: 1.5 }, objectName: "quote outline" });
-    await badge(s, fa.FaQuoteLeft, M + 0.35, 5.45, 0.8, HEX.accent1, HEX.dk1, "quote");
+    await badge(s, fa.FaLightbulb, M + 0.35, 5.45, 0.8, HEX.accent1, HEX.dk1, "next idea");
     s.addText([
-      { text: "From our notes the day we added it: ", options: { bold: true, color: C.background1 } },
-      { text: "without position, the robot “could not connect crashes to places on the field, so it could not learn to drive around obstacles.”" },
+      { text: "But a map only works for ONE field. ", options: { bold: true, color: C.background1 } },
+      { text: "It had to memorize where the 2026 hub is, and next year the field changes. So we gave it something better: eyes." },
     ], { x: M + 1.45, y: 5.1, w: W - 2 * M - 1.8, h: 1.6, isTextBox: true, fontSize: 17,
       color: C.background2, valign: "middle", margin: 0 });
   }
-  s.addNotes("In version 1 the path was drawn around the obstacles for it, so it didn't need to know where they were. With random paths, a waypoint can be on the far side of a hub, so the robot has to learn where the hub is. It can only do that if it knows where it is. The quote is paraphrased from the commit message that added position (going from 6 to 8 observations).");
+  s.addNotes("In version 1 the path was drawn around the obstacles for it, so it didn't need to know where they were. With random paths, a waypoint can be on the far side of a hub, so the robot has to know where the hub is. Position made that learnable, but only by memorizing this one field. That's slow to learn and useless in 2027. Next slide: how we let it see obstacles instead.");
 
-  // 16d ─ Warning zone
+  // 16d ─ Distance rays
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
-  s.addText("Feeling the obstacles: the warning zone", { placeholder: "title" });
+  s.addText("Seeing obstacles: 8 distance rays", { placeholder: "title" });
   {
-    // Diagram (not to scale): hub with three bands that get redder closer in.
-    const ox = 3.6, oy = 2.55, ow = 2.0, oh = 1.9, step = 0.32;
-    const bands = [[3, 85], [2, 65], [1, 40]];
-    for (const [k, tr] of bands) {
-      s.addShape(pres.shapes.RECTANGLE, { x: ox - k * step, y: oy - k * step, w: ow + 2 * k * step, h: oh + 2 * k * step,
-        fill: { color: HEX.accent2, transparency: tr }, line: { type: "none" }, objectName: `warning band ${k}` });
-    }
+    const ox = 4.55, oy = 2.35, ow = 1.9, oh = 2.2;   // hub
     s.addShape(pres.shapes.RECTANGLE, { x: ox, y: oy, w: ow, h: oh, fill: { color: HEX.accent2 },
       line: { color: HEX.lt1, width: 1 }, objectName: "hub" });
     s.addText("HUB", { x: ox, y: oy, w: ow, h: oh, isTextBox: true, align: "center", valign: "middle",
       fontSize: 22, bold: true, color: HEX.lt1, margin: 0 });
-    // robot approaching from the left
-    const rs = 0.75, rx0 = M + 0.1, ry0 = oy + oh / 2 - rs / 2;
-    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: rx0, y: ry0, w: rs, h: rs, rectRadius: 0.08,
+    const rs = 0.7, cx = 2.55, cy = oy + oh / 2, L = 1.75;
+    const dirs = [["E", 1, 0], ["NE", 1, -1], ["N", 0, -1], ["NW", -1, -1], ["W", -1, 0], ["SW", -1, 1], ["S", 0, 1], ["SE", 1, 1]];
+    for (const [nm, dx, dy] of dirs) {
+      const n = Math.hypot(dx, dy), ux = dx / n, uy = dy / n;
+      const hit = nm === "E";
+      const len = hit ? (ox - cx) : L;                      // the east ray stops at the hub
+      const x1 = cx + ux * rs * 0.55, y1 = cy + uy * rs * 0.55, x2 = cx + ux * len, y2 = cy + uy * len;
+      s.addShape(pres.shapes.LINE, { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1),
+        flipH: x2 < x1, flipV: y2 < y1, line: { color: hit ? HEX.accent1 : HEX.accent4, width: hit ? 3.5 : 2.5,
+          dashType: hit ? "solid" : "dash" }, objectName: `ray ${nm}` });
+      if (!hit) {
+        s.addShape(pres.shapes.OVAL, { x: x2 - 0.07, y: y2 - 0.07, w: 0.14, h: 0.14, fill: { color: HEX.accent4 },
+          line: { type: "none" }, objectName: `ray ${nm} end` });
+      }
+    }
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: cx - rs / 2, y: cy - rs / 2, w: rs, h: rs, rectRadius: 0.08,
       fill: { color: HEX.lt1 }, line: { color: HEX.accent4, width: 2 }, objectName: "robot" });
-    await (async () => {
-      s.addImage({ data: await icon(fa.FaRobot, HEX.dk1), x: rx0 + 0.15, y: ry0 + 0.15, w: rs - 0.3, h: rs - 0.3,
-        objectName: "robot icon", altText: "robot" });
-    })();
-    s.addShape(pres.shapes.LINE, { x: rx0 + rs + 0.1, y: ry0 + rs / 2, w: ox - 3 * step - (rx0 + rs + 0.1) - 0.1, h: 0,
-      line: { color: HEX.lt2, width: 2.5, endArrowType: "triangle" }, objectName: "approach arrow" });
-    s.addText("(drawn bigger so you can see it)", { x: ox - 3 * step, y: oy + oh + 3 * step + 0.08, w: ow + 6 * step, h: 0.35,
-      isTextBox: true, align: "center", fontSize: 11, italic: true, color: C.accent5, margin: 0 });
-    // penalty meter
-    const meter = [
-      { t: "Outside", p: "0", tr: 100 }, { t: "Edge of zone", p: "0", tr: 85 },
-      { t: "Halfway in", p: "−0.25 / step", tr: 65 }, { t: "Touching", p: "−0.5 / step", tr: 40 },
-      { t: "Crash!", p: "−75, attempt over", tr: 0 },
-    ];
-    const mw = 1.36, mg = 0.06, my = 6.0, mx0 = M;
-    meter.forEach((m, i) => {
-      const x = mx0 + i * (mw + mg);
-      s.addShape(pres.shapes.RECTANGLE, { x, y: my, w: mw, h: 0.75,
-        fill: { color: m.tr === 100 ? HEX.dk2 : HEX.accent2, transparency: m.tr === 100 ? 0 : m.tr },
-        line: { color: HEX.accent5, width: 0.5 }, objectName: `meter ${i + 1}` });
-      s.addText([
-        { text: m.t, options: { bold: true, breakLine: true } }, { text: m.p },
-      ], { x, y: my, w: mw, h: 0.75, isTextBox: true, align: "center", valign: "middle", fontSize: 11,
-        color: HEX.lt1, margin: 0 });
-    });
-    // explainer
+    s.addImage({ data: await icon(fa.FaRobot, HEX.dk1), x: cx - rs / 2 + 0.14, y: cy - rs / 2 + 0.14, w: rs - 0.28, h: rs - 0.28,
+      objectName: "robot icon", altText: "robot" });
+    s.addText("short!", { x: ox - 1.1, y: cy - 0.38, w: 1.0, h: 0.3, isTextBox: true, fontSize: 13, align: "right",
+      bold: true, color: C.accent1, margin: 0 });
+    s.addText("Yellow ray: short, the hub is close. Green rays: nothing within 2 m. (Drawn bigger so you can see it.)", { x: M, y: oy + oh + 1.05, w: 6.9, h: 0.6,
+      isTextBox: true, fontSize: 12, italic: true, color: C.accent5, margin: 0 });
     const sx = 7.75, sw = W - M - sx;
-    card(s, sx, 1.45, sw, 5.3, "warning explainer card");
+    card(s, sx, 1.45, sw, 5.3, "rays explainer card");
     s.addText([
-      { text: "A 15 cm (about 6 inch) warning zone surrounds every hub and trench.", options: { breakLine: true } },
-      { text: "The closer the robot gets, the more each step costs.", options: { bold: true, color: C.background1, breakLine: true } },
-      { text: "Like a car's parking sensor: beep… beep.. beep-beep-beep!", options: { italic: true, color: C.accent1, breakLine: true } },
-      { text: "That growing cost teaches it that something is there before it ever crashes. Version 1 only found out by hitting things." },
+      { text: "Each ray asks: how far can I drive this way before my bumper hits something? (up to 2 m)", options: { breakLine: true } },
+      { text: "Like a car's parking sensors, pointing 8 ways at once.", options: { italic: true, color: C.accent1, breakLine: true } },
+      { text: "It works on ANY shape: 2025's hexagon, 2026's rectangles, whatever 2027 brings.", options: { bold: true, color: C.background1, breakLine: true } },
+      { text: "We removed the old warning-zone penalty: once the robot could see obstacles, it only slowed learning down." },
     ], { x: sx + 0.35, y: 1.7, w: sw - 0.7, h: 4.85, isTextBox: true, fontSize: 17, color: C.background2,
       valign: "top", margin: 0, paraSpaceAfter: 14 });
   }
-  s.addNotes("This is shaping: instead of only a big penalty at the moment of a crash, the penalty grows as the robot gets closer, from 0 at the edge of the zone to −0.5 every step when its bumper touches. A crash is still −75 and ends the attempt. Because the cost grows, the robot feels a gradient that points away from the obstacle, and with Field X and Field Y it can learn where those obstacles are. We first tried a 40 cm zone, but it covered most of the narrow corridor between hub and trench, so the robot was being punished even on a good path. We shrank it to about 6 inches.");
+  s.addNotes("Each ray is one number between 0 (touching) and 1 (clear for at least 2 m). In the picture the east ray is short because the hub is right there. On the robot, these get computed from the corners of each field element, which our 1507Base code already stores, so next year we only swap in the new field's shapes. Earlier we tried a warning zone: a growing penalty within 15 cm of an obstacle. With rays the robot can see obstacles directly, and in our test the warning zone just made it hesitate, so we took it out.");
 
   // 16e ─ Today's scoreboard
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
   s.addText("Today's scoreboard", { placeholder: "title" });
   {
     const items = [
-      { p: "+2", u: "per meter", t: "each time it gets closer than ever before to its waypoint" },
-      { p: "+100", u: "", t: "for reaching a waypoint (within 0.65 m)" },
-      { p: "+75", u: "", t: "for finishing every waypoint" },
-      { p: "−0.03", u: "every step", t: "about −1.5 per second, so keep moving" },
-      { p: "−0.5", u: "up to, every step", t: "inside the warning zone near an obstacle" },
-      { p: "−75", u: "", t: "for a crash, and the attempt ends" },
+      { p: "+2", u: "per meter", t: "closer to the waypoint, measured along the path around obstacles", c: HEX.accent4 },
+      { p: "+0.8", u: "every step", t: "for driving toward the waypoint at full speed", c: HEX.accent4 },
+      { p: "+100", u: "", t: "for reaching a waypoint (within 0.40 m)", c: HEX.accent4 },
+      { p: "+75", u: "", t: "for finishing every waypoint", c: HEX.accent4 },
+      { p: "−0.03", u: "every step", t: "about −1.5 per second, so keep moving", c: HEX.accent2 },
+      { p: "−10", u: "", t: "for a crash, and the attempt ends", c: HEX.accent2 },
+      { p: "5 s", u: "", t: "to reach each waypoint, or the attempt ends", c: HEX.accent1 },
+      { p: "0", u: "", t: "for wiggling: backing up gives back what moving closer earned", c: HEX.accent5 },
     ];
-    const cols = 3, cw = 3.85, ch = 1.55, gx = 0.3, gy = 0.2, y0 = 1.4;
+    const cols = 4, gx = 0.25, cw = (W - 2 * M - 3 * gx) / 4, ch = 1.6, gy = 0.2, y0 = 1.4;
     items.forEach((it, i) => {
       const x = M + (i % cols) * (cw + gx), y = y0 + Math.floor(i / cols) * (ch + gy);
       card(s, x, y, cw, ch, `score card ${i + 1}`);
-      const pos = it.p.startsWith("+");
       s.addText([
-        { text: it.p, options: { bold: true, fontSize: 30, color: pos ? HEX.accent4 : HEX.accent2 } },
+        { text: it.p, options: { bold: true, fontSize: 28, color: it.c } },
         { text: it.u ? "  " + it.u : "", options: { fontSize: 13, color: HEX.accent5 } },
-      ], { x: x + 0.3, y: y + 0.12, w: cw - 0.6, h: 0.6, isTextBox: true, valign: "middle", margin: 0 });
-      s.addText(it.t, { x: x + 0.3, y: y + 0.75, w: cw - 0.6, h: 0.7, isTextBox: true, fontSize: 14,
+      ], { x: x + 0.25, y: y + 0.1, w: cw - 0.5, h: 0.6, isTextBox: true, valign: "middle", margin: 0 });
+      s.addText(it.t, { x: x + 0.25, y: y + 0.72, w: cw - 0.5, h: 0.8, isTextBox: true, fontSize: 14,
         color: C.background2, valign: "top", margin: 0 });
     });
-    // how we got here timeline
-    const ty = 5.05;
-    s.addText("How we got here", { x: M, y: ty - 0.05, w: 4, h: 0.4, isTextBox: true, fontSize: 18, bold: true,
-      color: C.background1, margin: 0 });
-    const tl = [
-      "Start: 6 numbers, +20 per waypoint",
-      "Added Field X and Field Y",
-      "Points for being close → it hovered",
-      "Only personal bests earn points",
-      "It hesitated → +100 arrival, faster clock",
-      "Warning zone added",
-    ];
-    const n = tl.length, lx = M + 1.0, lw = W - 2 * M - 2.0, ly = ty + 0.65, seg = lw / (n - 1);
-    s.addShape(pres.shapes.LINE, { x: lx, y: ly, w: lw, h: 0, line: { color: HEX.accent5, width: 2 }, objectName: "timeline line" });
-    tl.forEach((t, i) => {
-      const cx = lx + i * seg;
-      s.addShape(pres.shapes.OVAL, { x: cx - 0.11, y: ly - 0.11, w: 0.22, h: 0.22,
-        fill: { color: i === n - 1 ? HEX.accent1 : HEX.lt2 }, line: { type: "none" }, objectName: `timeline dot ${i + 1}` });
-      const tw = 1.9;
-      s.addText(t, { x: cx - tw / 2, y: ly + 0.2, w: tw, h: 0.75, isTextBox: true, fontSize: 12,
-        align: "center", color: C.background2, margin: 0, valign: "top" });
-    });
+    // Detour diagram: straight line vs. path around the hub
+    const by = 5.1, bh = 1.65;
+    s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: M, y: by, w: W - 2 * M, h: bh, rectRadius: 0.12,
+      fill: { color: HEX.dk2 }, line: { color: HEX.accent1, width: 1.5 }, objectName: "detour box" });
+    const ry = by + bh / 2, rx = M + 0.45, tx = M + 3.85, hx = M + 1.75, hw = 0.75, hh = 0.85;
+    s.addShape(pres.shapes.RECTANGLE, { x: hx, y: ry - hh / 2 + 0.12, w: hw, h: hh, fill: { color: HEX.accent2 },
+      line: { type: "none" }, objectName: "detour hub" });
+    s.addShape(pres.shapes.LINE, { x: rx, y: ry, w: tx - rx, h: 0, line: { color: HEX.accent2, width: 2, dashType: "dash" },
+      objectName: "straight path" });
+    const top = ry - hh / 2 - 0.1;
+    const pts = [[rx, ry], [hx - 0.08, top], [hx + hw + 0.08, top], [tx, ry]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+      s.addShape(pres.shapes.LINE, { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1) || 0.001,
+        h: Math.abs(y2 - y1), flipV: y2 < y1 && x2 > x1 ? true : false, flipH: false,
+        line: { color: HEX.accent4, width: 3, endArrowType: i === pts.length - 2 ? "triangle" : undefined },
+        objectName: `around path ${i + 1}` });
+    }
+    s.addShape(pres.shapes.OVAL, { x: rx - 0.14, y: ry - 0.14, w: 0.28, h: 0.28, fill: { color: HEX.lt1 },
+      line: { type: "none" }, objectName: "detour robot" });
+    s.addShape(pres.shapes.OVAL, { x: tx - 0.12, y: ry - 0.12, w: 0.24, h: 0.24, fill: { color: HEX.accent1 },
+      line: { type: "none" }, objectName: "detour target" });
+    s.addText([
+      { text: "Going around counts as progress. ", options: { bold: true, color: C.background1 } },
+      { text: "We used to measure the straight line (red). Swinging around the hub made that line longer, so the robot lost points for doing the right thing and learned to stall. Now we measure the green path." },
+    ], { x: M + 4.45, y: by, w: W - 2 * M - 4.8, h: bh, isTextBox: true, fontSize: 15,
+      color: C.background2, valign: "middle", margin: 0 });
   }
-  s.addNotes("This is the whole reward function for the random-path robot today. Compare it to Chapter 1's list. The timeline is the order we changed things in, straight from our git history. Two of those changes were the robot outsmarting us again: when we paid it just for being close to a waypoint, it hovered nearby collecting points instead of arriving, so now it only earns points for beating its personal-best distance. And when it hesitated right before the waypoint, we made arriving worth +100 and made the clock cost three times more. We also tried a huge −100 crash penalty, and it got so scared that it avoided waypoints near obstacles, so we brought it back down.");
+  s.addNotes("The whole reward for the working robot. The two per-step rewards are the same pair the figure-8 robot from Chapter 1 learned from: get closer, and point your speed at the target. Because 'closer' is a change in distance, driving away gives back exactly what driving closer earned, so wiggling can't farm points (an earlier version of the robot found that loophole). The big idea at the bottom: distance is measured along the shortest path around the obstacles, not in a straight line. With the straight line, the correct detour looked like going the wrong way.");
+
+  // 16g ─ The breakthrough (learning curve)
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("The breakthrough", { placeholder: "title" });
+  {
+    const rt = charts.route_test || [];
+    // label only round values (500k, 1M, 1.5M, ...) so the axis reads cleanly
+    const labels = rt.map((p) => p.k % 500 ? "" : p.k < 1000 ? p.k + "k" : (p.k / 1000) + "M");
+    const cw = 8.3;
+    s.addChart(pres.charts.LINE, [
+      { name: "Finished", labels, values: rt.map((p) => p.complete) },
+      { name: "Crashed", labels, values: rt.map((p) => p.crash) },
+    ], {
+      x: M, y: 1.4, w: cw, h: 5.35, objectName: "learning curve chart",
+      showTitle: true, title: "% of 50 hard test routes, every 50,000 steps", titleColor: HEX.lt1, titleFontSize: 14, titleFontFace: "+mn-lt",
+      chartColors: [HEX.accent4, HEX.accent2], lineSize: 2.5, lineDataSymbol: "none",
+      valAxisMinVal: 0, valAxisMaxVal: 100, valAxisMajorUnit: 20,
+      valAxisLabelColor: HEX.lt2, catAxisLabelColor: HEX.lt2, valAxisLabelFontSize: 11, catAxisLabelFontSize: 11,
+      valAxisLabelFontFace: "+mn-lt", catAxisLabelFontFace: "+mn-lt", catAxisLabelFrequency: 1,
+      valGridLine: { color: "3A4250", size: 0.5 }, catGridLine: { style: "none" },
+      catAxisLineColor: HEX.accent5, valAxisLineShow: false,
+      showLegend: true, legendPos: "b", legendColor: HEX.lt2, legendFontSize: 12, legendFontFace: "+mn-lt",
+      showCatAxisTitle: true, catAxisTitle: "training steps", catAxisTitleColor: HEX.accent5, catAxisTitleFontSize: 11,
+    });
+    const notes = [
+      { head: "Stuck around 40%", sub: "250k to 550k steps. It looked like it had stopped learning.", c: HEX.accent1 },
+      { head: "Breakthrough", sub: "550k to 1M: finished routes climbed and crashes fell toward zero.", c: HEX.accent4 },
+      { head: "Overnight", sub: "We paused at 1M and kept training overnight. A short dip, then it leveled off around 90%.", c: HEX.accent3 },
+    ];
+    const nx = M + cw + 0.35, nw = W - M - nx, nh = 1.6;
+    for (let i = 0; i < notes.length; i++) {
+      const y = 1.45 + i * (nh + 0.2);
+      card(s, nx, y, nw, nh, notes[i].head + " card");
+      s.addText([
+        { text: notes[i].head, options: { bold: true, fontSize: 18, color: notes[i].c, breakLine: true } },
+        { text: notes[i].sub, options: { fontSize: 14 } },
+      ], { x: nx + 0.25, y: y + 0.15, w: nw - 0.5, h: nh - 0.3, isTextBox: true, color: C.background2,
+        valign: "top", margin: 0, paraSpaceAfter: 4 });
+    }
+  }
+  s.addNotes("Every 10,000 steps the trainer drives the same 50 hard routes and records how many it finishes; this chart averages those tests over every 50,000 steps. For 400,000 steps it hovered around 40% and we wondered if it was stuck. Then it took off. The dip right after 1M is from restarting training, which starts with an empty memory of past attempts; it recovered within about 150,000 steps. Total: 2.5 million steps, about 14 hours of simulated driving, which took about 20 hours on a laptop. Lesson: some learning looks flat for a long time before it clicks.");
+
+  // 16h ─ Same route, getting better
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("Same route, getting better", { placeholder: "title" });
+  {
+    const vw = 4.7, gxv = 0.5, x0 = (W - 2 * vw - gxv) / 2;
+    const vids = [
+      { key: "ch3_150k", t: "crashes in under a second", c: C.accent2 },
+      { key: "ch3_200k", t: "gets most of the way, then gets stuck", c: C.accent1 },
+      { key: "ch3_500k", t: "almost there, crashes near the end", c: C.accent2 },
+      { key: "ch3_1m", t: "all 10 waypoints in 8.7 seconds", c: C.accent4 },
+    ];
+    for (let i = 0; i < vids.length; i++) {
+      const v = vids[i], x = x0 + (i % 2) * (vw + gxv), y = 1.45 + Math.floor(i / 2) * 2.7;
+      const h = await video(s, v.key, x, y, vw, v.key + " video");
+      s.addText([
+        { text: steps(manifest[v.key].train_step) + " steps: ", options: { bold: true, color: v.c } },
+        { text: v.t },
+      ], { x, y: y + h + 0.1, w: vw, h: 0.4, isTextBox: true, fontSize: 15, color: C.background2, margin: 0, valign: "top" });
+    }
+  }
+  s.addNotes("These four videos are the SAME route: 10 waypoints, two of them behind obstacles. We fixed the test route on purpose. Before that, each test video used a new random route, and a lucky easy route at one checkpoint made a later checkpoint on a hard route look like the robot was getting worse. Ask: what changes between 200,000 and 1,000,000 steps?");
+
+  // 16i ─ Final result
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("The final result", { placeholder: "title" });
+  {
+    const stats = [
+      { big: "90%", small: "of brand-new routes finished", c: HEX.accent4 },
+      { big: "5%", small: "crashed", c: HEX.accent2 },
+      { big: "96%", small: "of legs around a hub or trench made it", c: HEX.accent1 },
+      { big: "2.9", small: "m/s average speed", c: HEX.accent3 },
+    ];
+    const gx = 0.3, sw = (W - 2 * M - 3 * gx) / 4, sy = 1.5, sh = 2.25;
+    stats.forEach((st, i) => {
+      const x = M + i * (sw + gx);
+      card(s, x, sy, sw, sh, `result stat ${i + 1}`);
+      s.addText(st.big, { x: x + 0.25, y: sy + 0.2, w: sw - 0.5, h: 1.15, isTextBox: true, fontSize: 60, bold: true,
+        color: st.c, valign: "middle", margin: 0 });
+      s.addText(st.small, { x: x + 0.25, y: sy + 1.4, w: sw - 0.5, h: 0.75, isTextBox: true, fontSize: 15,
+        color: C.background2, valign: "top", margin: 0 });
+    });
+    const rows = [
+      { Comp: fa.FaTimesCircle, fill: HEX.accent2, ic: HEX.lt1, head: "October 3",
+        t: "500,000 steps, 0.2 waypoints per attempt, every test drive crashed." },
+      { Comp: fa.FaCheckCircle, fill: HEX.accent4, ic: HEX.dk1, head: "October 5",
+        t: "2.5 million steps, 90% of hard routes finished, ready to try on our robot code." },
+    ];
+    const rw = (W - 2 * M - 0.3) / 2, ry = 4.1, rh = 1.55;
+    for (let i = 0; i < rows.length; i++) {
+      const x = M + i * (rw + 0.3);
+      card(s, x, ry, rw, rh, rows[i].head + " card");
+      await badge(s, rows[i].Comp, x + 0.3, ry + 0.35, 0.85, rows[i].fill, rows[i].ic, rows[i].head);
+      s.addText([
+        { text: rows[i].head, options: { bold: true, fontSize: 20, color: C.background1, breakLine: true } },
+        { text: rows[i].t, options: { fontSize: 15 } },
+      ], { x: x + 1.4, y: ry + 0.15, w: rw - 1.7, h: rh - 0.3, isTextBox: true, color: C.background2, valign: "middle", margin: 0 });
+    }
+    s.addText("Tested on 150 routes it never saw while we picked the best model. 2.5 million steps is about 14 hours of simulated driving.", {
+      x: M, y: 5.9, w: W - 2 * M, h: 0.7, isTextBox: true, fontSize: 13, italic: true, color: C.accent5, margin: 0, valign: "top" });
+  }
+  s.addNotes("These numbers come from 150 brand-new routes the robot never saw while we were choosing which saved brain to keep. That matters: if you test on the same routes you used to pick the winner, the winner looks better than it is. Two days: from crashing every time to finishing 9 out of 10 hard routes.");
+
+  // 16j ─ Lessons
+  s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
+  s.addText("What the failure taught us", { placeholder: "title" });
+  {
+    const items = [
+      { Comp: fa.FaSearch, head: "Measure, don't guess", t: "Our first theory sounded right and was wrong. A quick test told us." },
+      { Comp: fa.FaRobot, head: "Compare to something simple", t: "A 3-line program beat the AI. That proved the points were fine and the learning was broken." },
+      { Comp: fa.FaLayerGroup, head: "Easy first, then harder", t: "Short, clear paths before random ones, the same way you'd learn a new skill." },
+      { Comp: fa.FaVideo, head: "One video isn't data", t: "A single test drive can be lucky. We test 50 routes and keep the best brain, not the last one." },
+    ];
+    const cw = (W - 2 * M - 0.3) / 2, ch = 2.45;
+    for (let i = 0; i < items.length; i++) {
+      const x = M + (i % 2) * (cw + 0.3), y = 1.5 + Math.floor(i / 2) * (ch + 0.3);
+      card(s, x, y, cw, ch, items[i].head + " card");
+      await badge(s, items[i].Comp, x + 0.35, y + 0.35, 0.9, HEX.accent1, HEX.dk1, items[i].head);
+      s.addText(items[i].head, { x: x + 1.5, y: y + 0.35, w: cw - 1.8, h: 0.9, isTextBox: true, fontSize: 22,
+        bold: true, color: C.background1, valign: "middle", margin: 0 });
+      s.addText(items[i].t, { x: x + 0.35, y: y + 1.4, w: cw - 0.7, h: 0.9, isTextBox: true, fontSize: 16,
+        color: C.background2, valign: "top", margin: 0 });
+    }
+  }
+  s.addNotes("These apply to any engineering problem, not just AI. 'Keep the best, not the last': the robot's skill swung up and down by 10 to 20 points between saves, so the trainer now tests every 10,000 steps and keeps the best one. All of this is in our git history with the reasons written down, so you can read exactly what we tried.");
 
   // 16f ─ Where we're going next
   s = pres.addSlide({ masterName: "CONTENT", sectionTitle: "Chapter 3: Random paths" });
@@ -855,8 +1073,8 @@ async function build() {
       x: M, y: 1.35, w: W - 2 * M, h: 0.5, isTextBox: true, fontSize: 18, italic: true, color: C.accent1, margin: 0 });
     const items = [
       { Comp: fa.FaSyncAlt, head: "“Which way am I facing?”", t: "Bring heading back so the robot can turn and face a target, like the hub when it shoots." },
-      { Comp: fa.FaGamepad, head: "“What does the driver want?”", t: "Teleop assist: 10 numbers, including the driver's joystick, so the policy can help the driver steer." },
-      { Comp: fa.FaTachometerAlt, head: "“How does OUR robot move?”", t: "Make the simulator match our 2027 robot's real speed and acceleration, so what it learns transfers." },
+      { Comp: fa.FaGamepad, head: "“What does the driver want?”", t: "Teleop assist: the policy sees the driver's joystick and helps them steer around obstacles." },
+      { Comp: fa.FaGlobeAmericas, head: "“What does 2027's field look like?”", t: "Train with random obstacles, so the rays work on any field, not just 2026's." },
       { Comp: fa.FaBalanceScale, head: "Just enough", t: "Too few numbers and it can't decide. Too many and it learns slower. Pick what matters." },
     ];
     const cw = (W - 2 * M - 0.3) / 2, ch = 2.2;
@@ -870,7 +1088,7 @@ async function build() {
         color: C.background2, valign: "top", margin: 0 });
     }
   }
-  s.addNotes("Where the observations are headed. Right now the robot can't rotate, so it doesn't need heading; once it has to face the hub, heading comes back. Teleop assist is our other experiment: the policy sees the driver's joystick and helps them drive while avoiding obstacles. And before any of this goes on the real robot, the simulator needs to move like our actual 2027 swerve drive.");
+  s.addNotes("Where the robot goes next. Right now it can't rotate, so it doesn't need heading; once it has to face the hub, heading comes back. Teleop assist is our other experiment. The simulator already moves like our 2027 robot: same top speed (5.04 m/s) and the same acceleration limits as our 1507Base code. Next step is a new field every season, which the rays make possible.");
 
   // 17 ─ Sim to robot
   pres.addSection({ title: "This season" });
@@ -976,6 +1194,8 @@ async function build() {
       ["WPILib", "Worcester Polytechnic Institute Library", "The software library our robot code is built on"],
       ["NT", "NetworkTables", "How the robot and computers share live data"],
       ["OBS", "Observation", "One number the robot “sees”, like its speed or position"],
+      ["Ray", "Distance ray", "How far the robot can drive in one direction before hitting something"],
+      ["—", "Curriculum", "Practicing easy versions first, then harder ones"],
     ];
     const head = (t) => ({ text: t, options: { bold: true, color: HEX.dk1, fill: { color: HEX.accent1 }, fontSize: 14 } });
     const rows = [[head("Short"), head("Stands for"), head("What it means")]].concat(g.map(([a, b, c], i) => [
@@ -983,7 +1203,7 @@ async function build() {
       { text: b, options: { bold: true, color: HEX.lt1, fill: { color: i % 2 ? HEX.dk1 : HEX.dk2 }, fontSize: 15 } },
       { text: c, options: { color: HEX.lt2, fill: { color: i % 2 ? HEX.dk1 : HEX.dk2 }, fontSize: 15 } },
     ]));
-    s.addTable(rows, { x: M, y: 1.45, w: W - 2 * M, colW: [1.4, 4.3, W - 2 * M - 5.7], rowH: 0.5,
+    s.addTable(rows, { x: M, y: 1.45, w: W - 2 * M, colW: [1.3, 3.9, W - 2 * M - 5.2], rowH: 0.45,
       border: { type: "none" }, valign: "middle", margin: 0.08, objectName: "glossary table" });
   }
   s.addNotes("Leave this up during questions.");
