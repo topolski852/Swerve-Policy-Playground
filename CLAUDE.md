@@ -40,9 +40,10 @@ slip 15 / torque 10 m/s²), 0.40 m pass radius (`kAuto.Accuracy.NORMAL`), give u
   Checkpoint names repeat every run: move old ones into `path_randomizer/checkpoints/run_<date>/` first.
 - **History:** the 2026-06 and 2026-10-03 runs never learned (0.1–0.2 nodes/episode). Causes and fixes are in
   the 2026-10-04 commits (obs scale, 60 s episodes, crash-as-truncated, crash −75, no curriculum).
-  Current best: `checkpoints/run_20261004_2019/best_stage2.zip` (1M steps, ~8 h on the laptop). On 150 fresh
-  stage-2 routes: 78% complete, 5% crash, blocked legs fail 11%, clear legs 1%; stage 0/1 94%/97%.
-  Still improving at 1M; it plateaued at ~40% from 110k to 550k before breaking through.
+  Current best: `checkpoints/run_20261005_0027/randomizer_final.zip` (2.5M steps: 1M fresh + 1.5M resumed
+  overnight, ~20 h on the laptop). On 150 fresh stage-2 routes: 90% complete, 5% crash, 5% timeout, blocked legs
+  fail 4%, clear legs 0.7%, 2.9 m/s; stage 0/1 100%/98%. Plateaued at 88–90% from ~1.7M on (fresh routes).
+  Curve: `logs/route_test_2026-10-04_to_05.png` (plateau ~40% 110k–550k, breakthrough, dip after resume).
 
 ## Active experiment: fuel_scoring
 
